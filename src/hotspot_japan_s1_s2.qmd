@@ -1,0 +1,224 @@
+---
+title: "hotspot_japan_s1_s2"
+format: html
+editor: visual
+---
+
+# outline
+
+S1及びS2のdetectionを用いて、日本のEEZ内の船舶検出数をプロット
+
+# setting
+
+```{r message=FALSE, warning=FALSE, attr.source='.numberLines', include=FALSE, results=FALSE}
+# 現在の環境にある変数の消去
+#rm(list = ls("all.names" = TRUE))
+#データの指数表示を避ける
+options(scipen = 100)
+# free memory
+#gc() 
+```
+
+# load packages
+
+```{r}
+library(bigrquery)
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(skimr)
+library(stringr)
+library(forcats)
+library(readr)
+```
+
+# load data
+
+## detections data
+
+　GFWによるS1及びS2の船舶検出データをBigQueryから取得し、Rに読み込む
+
+```{r}
+projectid = "fish-database-275116"
+
+# S1
+sql <- "SELECT * FROM `fish-database-275116.GFW_Data.S1_published_detections_Zihan`;"
+tb <- bq_project_query(projectid, sql)
+s1_dat <- bq_table_download(tb)
+
+# S2
+sql <- "SELECT * FROM `fish-database-275116.GFW_Data.S2_detections_Zihan`;"
+tb <- bq_project_query(projectid, sql)
+s2_dat <- bq_table_download(tb)
+
+skim(s1_dat)
+skim(s2_dat)
+```
+
+## geo data
+
+　地理データを読み込む
+
+```{r}
+# EEZ
+eez_sf1 <-  st_read("~/Google Drive/Shared drives/gakuLab_data/Original/NEDO/EEZ_land_union_v3_202003/EEZ_Land_v3_202030.shp") |> dplyr::filter(stringr::str_detect(UNION, "Japan")) |>
+  st_transform(4326)
+eez_sf2 <- eez_sf1 |>
+  st_union()
+eez_sf <-   eez_sf2
+
+# Japan land
+japan_sf <- ne_countries(country = c('japan'),scale="large", returnclass = "sf") |>　st_transform(crs = 4326)
+```
+
+# data wrangling
+
+　ssvidが欠損しているデータに絞り、それらの緯度・経度を0.1または0.5度に丸めて集計する
+
+```{r}
+# only missing value in ssvid
+s1_dat_na <- s1_dat[is.na(s1_dat$ssvid),] #17.8%
+s2_dat_na <- s2_dat[is.na(s2_dat$ssvid),] #48.5%
+
+# data flame lat lon {#sec-data-flame-latlon}
+# 0.1
+temp_round <- 1
+s1_dat_na_0.1 <- s1_dat_na %>% 
+  mutate(lat_index = round(detect_lat, temp_round), 
+         lon_index = round(detect_lon, temp_round)) %>% 
+  group_by(lat_index, lon_index) %>% 
+  summarize(total_ditections =n()) %>% 
+  ungroup() %>% 
+  mutate(lat = lat_index, lon = lon_index) %>% 
+  select(lat, lon, total_ditections)
+
+s2_dat_na_0.1 <- s2_dat_na %>% 
+  mutate(lat_index = round(detect_lat, temp_round), 
+         lon_index = round(detect_lon, temp_round)) %>% 
+  group_by(lat_index, lon_index) %>% 
+  summarize(total_ditections =n()) %>% 
+  ungroup() %>% 
+  mutate(lat = lat_index, lon = lon_index) %>% 
+  select(lat, lon, total_ditections)
+
+# 0.5
+s1_dat_na_0.5 <- s1_dat_na %>% 
+  mutate(lat_index = round(detect_lat * 2) / 2, 
+         lon_index = round(detect_lon * 2) / 2) %>% 
+  group_by(lat_index, lon_index) %>% 
+  summarize(total_ditections =n()) %>% 
+  ungroup() %>% 
+  mutate(lat = lat_index, lon = lon_index) %>% 
+  select(lat, lon, total_ditections)
+
+s2_dat_na_0.5 <- s2_dat_na %>% 
+  mutate(lat_index = round(detect_lat * 2) / 2, 
+         lon_index = round(detect_lon * 2) / 2) %>% 
+  group_by(lat_index, lon_index) %>% 
+  summarize(total_ditections =n()) %>% 
+  ungroup() %>% 
+  mutate(lat = lat_index, lon = lon_index) %>% 
+  select(lat, lon, total_ditections)
+```
+
+# plot
+
+　作成した 0.1・0.5度の集計データを日本地図上にプロット、S1・S2による船舶の空間分布を可視化
+
+## 0.1
+
+```{r}
+## S1(0.1)
+fig_s1_0.1 <- ggplot() +  
+  geom_tile(data = s1_dat_na_0.1, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  xlim(125, 146) + ylim(25, 47) +
+  scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S1 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
+fig_s1_0.1 #425*600
+
+## S2(0.1)
+fig_s2_0.1 <- ggplot() + 
+  geom_tile(data = s2_dat_na_0.1, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  xlim(125, 146) + ylim(25, 47) +
+  scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S2 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
+fig_s2_0.1
+```
+
+S1とS2で検出パターンが異なっている。S1は船舶の分布が比較的限定的で、日本沿岸部に集中した検出パターンを示している。S2は沖合にも及ぶ広範囲での検出が示されている。 S2について、沿岸に近いほど船舶の検出が多いことがわかる。一方で沖合では空白のセル、すなわち船舶が検出されなかったセルが散在している。日本のEEZ内だと、特に日本海側の沖合にて船舶が検出されなかったセルが多く分布していることがわかる。
+
+## 0.5
+
+```{r}
+## S1(0.5)
+fig_s1_0.5 <- ggplot() + 
+  geom_tile(data = s1_dat_na_0.5, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  xlim(125, 146) + ylim(25, 47) +
+  scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S1 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
+fig_s1_0.5
+
+## S2(0.5)
+fig_s2_0.5 <- ggplot() +  
+  geom_tile(data = s2_dat_na_0.5, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  xlim(125, 146) + ylim(25, 47) +
+  scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S2 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
+fig_s2_0.5
+```
+
+　0.1度毎と同様、S1とS2で検出パターンが異なっている。そして双方とも沿岸側に船舶の検出が集中している。
