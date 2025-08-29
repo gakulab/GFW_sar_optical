@@ -6,7 +6,7 @@ editor: visual
 
 # outline
 
-S1及びS2のdetectionを用いて、日本のEEZ内の船舶検出数をプロット
+ S1/S2・水産庁が特定した空白セル・AISのdetectionを用いて、日本のEEZ内の船舶検出数をプロット
 
 # setting
 
@@ -32,11 +32,13 @@ library(skimr)
 library(stringr)
 library(forcats)
 library(readr)
+library(openxlsx)
+library(sparklyr)
 ```
 
 # load data
 
-## detections data
+## S1/S2 data
 
 　GFWによるS1及びS2の船舶検出データをBigQueryから取得し、Rに読み込む
 
@@ -57,6 +59,225 @@ skim(s1_dat)
 skim(s2_dat)
 ```
 
+
+
+## white cells data
+
+  水産庁より操業実績のない空白セルのデータを読み込む
+
+```{r}
+# white cells
+white_cells <- read.xlsx("~/Google Drive/Shared drives/gakuLab_data/Original/水産庁/EEZ水域利用/緯度経度データ（水域利用図の実績なし部分）.xlsx")
+```
+
+
+
+## AIS data
+
+  GFWによるAISデータをSpark経由で読み込む
+  
+### function to load GFW data
+
+```{r}
+load_gfw_data <- function(# default setting
+  base_path = "~/Google Drive/Shared drives/gakuLab_data",
+  years = 2018:2024,
+  include_2025 = TRUE,
+  memory_fraction = 0.90,
+  master = "local"
+) {
+  # Sparkセッションを明示的に変数に確保
+  spark_conn <- NULL
+  
+  # Setup Spark connection
+  tryCatch({
+    message("Initializing Spark connection...")
+    #conf <- list(spark.memory.fraction = memory_fraction)
+    # Spark接続用の設定
+    config <- spark_config()
+    config[["spark.serializer"]] <- "org.apache.spark.serializer.KryoSerializer"
+    config[["spark.kryo.registrator"]] <- "org.apache.sedona.core.serde.SedonaKryoRegistrator"
+    config[["spark.sql.extensions"]] <- "org.apache.sedona.sql.SedonaSqlExtensions"
+    config$sparklyr.jars.packages <- "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.7.2-incubating"
+    config$spark.sql.catalogImplementation <- "in-memory"
+    
+    # ハイフン付き要素は[]でアクセス
+    config[["sparklyr.shell.driver-memory"]]   <- "16G"
+    config[["sparklyr.shell.executor-memory"]] <- "12G"
+    config[["spark.executor.memory"]]          <- "12G"
+    config[["spark.driver.memory"]]            <- "16G"
+    
+    # 接続を試みる
+    spark_conn <- sparklyr::spark_connect(master = "local", config = config)
+    
+    # 接続が成功したか確認
+    if (!sparklyr::spark_connection_is_open(spark_conn)) {
+      stop("Failed to establish Spark connection")
+    }
+    
+    message("Spark connection established successfully!")
+    
+    # Helper function to read parquet data
+    read_parquet_data <- function(year, type = "daily") {
+      file_path <- file.path(
+        base_path,
+        "Original/gfw/daily/fixed_upto2024",
+        paste0("dat_", type, "_", year, "_v3.parquet")
+      )
+      
+      message(sprintf("Reading %s data for year %s...", type, year))
+      
+      # ファイルが存在するか確認
+      if (!file.exists(file_path)) {
+        warning(sprintf("File does not exist: %s", file_path))
+        return(NULL)
+      }
+      
+      tryCatch({
+        df <- sparklyr::spark_read_parquet(
+          sc = spark_conn,  # ここをsc=に変更
+          name = paste0("dat_", type, "_", year),
+          path = file_path,
+          memory = FALSE,
+          overwrite = TRUE
+        )
+        assign(paste0("daily_", year), df, envir = .GlobalEnv)
+        return(df)
+      }, error = function(e) {
+        warning(sprintf("Error reading %s data for year %s: %s", type, year, e$message))
+        return(NULL)
+      })
+    }
+    
+    # Load yearly data
+    message("Loading yearly data...")
+    daily_data_list <- lapply(years, function(y) read_parquet_data(y, type = "daily"))
+    
+    # フィルタリングしてNULL値を除去
+    daily_data_list <- Filter(Negate(is.null), daily_data_list)
+    
+    # データが空かどうかチェック
+    if (length(daily_data_list) == 0) {
+      warning("No yearly data was loaded successfully")
+    }
+    
+    # Load 2025 data if requested
+    daily_2025 <- NULL
+    if (include_2025) {
+      message("Loading 2025 data...")
+      tryCatch({
+        path_2025 <- "~/Google Drive/Shared drives/gakuLab_data/Original/gfw/daily/need_update/dat_daily_2025_v3.parquet"
+        
+        if (file.exists(path_2025)) {
+          daily_2025 <- sparklyr::spark_read_parquet(
+            sc = spark_conn,  # ここをsc=に変更
+            name = "dat_daily_2025",
+            path = path_2025,
+            memory = FALSE,
+            overwrite = TRUE
+          )
+          assign("daily_2025", daily_2025, envir = .GlobalEnv)
+        } else {
+          warning("2025 data file does not exist")
+        }
+      }, error = function(e) {
+        warning(sprintf("Error loading 2025 data: %s", e$message))
+      })
+    }
+    
+    # その他のデータ読み込み処理...
+    message("Loading gfw vessel list...")
+    vessel_list_path <- file.path(base_path, "Original/gfw/vessel_list/gfw_vessel_list_v3.parquet")
+    
+    if (file.exists(vessel_list_path)) {
+      vessel_list_gfw <- sparklyr::spark_read_parquet(
+        sc = spark_conn,  # ここをsc=に変更
+        name = "list_vessel_gfw",
+        path = vessel_list_path,
+        memory = FALSE,
+        overwrite = TRUE
+      )
+      assign("vessel_list_gfw", vessel_list_gfw, envir = .GlobalEnv)
+    } else {
+      warning("Vessel list file does not exist")
+    }
+    
+    # 国コードの読み込み
+    message("Loading gfw country codes...")
+    country_codes_path <- file.path(base_path, "Project/gakuLab_vessel_list/list_country/GFWcountry_codes19Aug23_gakulab.csv")
+    
+    if (file.exists(country_codes_path)) {
+      country_codes_gfw <- sparklyr::spark_read_csv(
+        sc = spark_conn,  # ここをsc=に変更
+        name = "list_country_gfw",
+        path = country_codes_path,
+        memory = FALSE,
+        delimiter = ",",
+        header = TRUE
+      )
+      assign("country_list_gfw", country_codes_gfw, envir = .GlobalEnv)
+    } else {
+      warning("Country codes file does not exist")
+    }
+    
+    # データの結合
+    # 少なくとも一つのデータフレームがあるか確認
+    has_data_to_combine <- (length(daily_data_list) > 0) || (!is.null(daily_2025))
+    
+    if (has_data_to_combine) {
+      message("Combining daily data...")
+      daily_data_to_combine <- c(
+        if (!is.null(daily_2025)) list(daily_2025),
+        daily_data_list
+      )
+      
+      # 結合するべきデータがあるか確認
+      if (length(daily_data_to_combine) > 0) {
+        combined_daily <- do.call(sparklyr::sdf_bind_rows, daily_data_to_combine)
+        assign("combined_daily", combined_daily, envir = .GlobalEnv)
+      } else {
+        warning("No data to combine")
+      }
+    } else {
+      warning("No data available to combine")
+    }
+    
+    # 完了メッセージ
+    message("Data loading completed successfully")
+    assign("spark_conn", spark_conn, envir = .GlobalEnv)
+    
+  }, error = function(e) {
+    # エラーが発生した場合、Spark接続をクリーンアップ
+    if (!is.null(spark_conn) && sparklyr::spark_connection_is_open(spark_conn)) {
+      message("Disconnecting Spark due to error...")
+      sparklyr::spark_disconnect(spark_conn)
+    }
+    stop(sprintf("Error in data loading: %s", e$message))
+  })
+}
+```
+
+
+
+### load data
+
+```{r}
+# GFW daily data 
+load_gfw_data(years = 2018:2024, include_2025 = TRUE)
+# 
+temp_main <- sparklyr::sdf_bind_rows(daily_2018,
+                           daily_2019,
+                           daily_2020,
+                           daily_2021,
+                           daily_2022,
+                           daily_2023,
+                           daily_2024,
+                           daily_2025 #
+                           )
+```
+
+
+
 ## geo data
 
 　地理データを読み込む
@@ -74,6 +295,8 @@ japan_sf <- ne_countries(country = c('japan'),scale="large", returnclass = "sf")
 ```
 
 # data wrangling
+
+## S1/S2 data
 
 　ssvidが欠損しているデータに絞り、それらの緯度・経度を0.1または0.5度に丸めて集計する
 
@@ -123,11 +346,66 @@ s2_dat_na_0.5 <- s2_dat_na %>%
   select(lat, lon, total_ditections)
 ```
 
+
+
+## AIS data
+
+```{r}
+fishing_vessel_set <- c("drifting_longlines", "fish_factory","fishing","fixed_gear",           
+"other_purse_seines", "pole_and_line","pots_and_traps",    
+"purse_seines",     "set_longlines","squid_jigger",    "trawlers",     "tuna_purse_seines")
+
+temp_dat <- temp_main
+
+temp_dat_cleaned <- temp_dat %>% 
+  
+  # semi_join(
+  #   tbl(spark_conn, "japan_eez_polygons"),
+  #   sql_on = "ST_Contains(RHS.geometry, LHS.geometry)"
+  # ) %>%
+  
+  sparklyr::mutate(year_st  = substring_index(first_timestamp, "-",1),
+          month_st  = substring_index(substring_index(first_timestamp, "-",2), "-", -1), 
+          day_st  = str_sub(substring_index(first_timestamp, " ", 1), -2)) |> 
+  # mutate date  for JP time     
+    sparklyr::mutate(first_timestamp_jp = from_utc_timestamp(first_timestamp, "Asia/Tokyo"),
+          last_timestamp_jp = from_utc_timestamp(last_timestamp, "Asia/Tokyo"),
+          month_jp = month(first_timestamp_jp), 
+          year_jp = year(first_timestamp_jp),
+          day_jp = day(first_timestamp_jp),
+          year = as.numeric(year_jp))|> 
+  
+  sparklyr::mutate(detect_lon = as.numeric(str_sub(substring_index(avg_lat_lon, " ", 1), start = 7L, end = -1L)), 
+    detect_lat = as.numeric(str_sub(substring_index(avg_lat_lon, " ", -1), start = 1L, end = -2L)),
+    lat_index  = round(detect_lat, temp_round),
+    lon_index  = round(detect_lon, temp_round)) %>%
+  # sparklyr::mutate(lat_index = round(detect_lat, temp_round),
+  #        lon_index = round(detect_lon, temp_round)) %>%
+  
+  left_join(vessel_list_gfw, by = c("ssvid", "year_st" = "year")) %>% 
+  filter(best_vessel_class %in% fishing_vessel_set) %>% 
+  
+  group_by(lat_index, lon_index) %>%
+  summarise(total_ditections = n()) %>%
+  sparklyr::mutate(lat = lat_index, lon = lon_index) %>%
+  ungroup() %>%
+  select(lat, lon, total_ditections)  
+
+# register table
+sdf_register(temp_dat_cleaned, "ais_detections")
+tbl_cache(spark_conn, "ais_detections")
+
+# collect
+ais_dat <- temp_dat_cleaned %>% collect()
+```
+
+
+
 # plot
 
 　作成した 0.1・0.5度の集計データを日本地図上にプロット、S1・S2による船舶の空間分布を可視化
 
-## 0.1
+## S1/S2(0.1)
 
 ```{r}
 ## S1(0.1)
@@ -175,7 +453,7 @@ fig_s2_0.1
 
 S1とS2で検出パターンが異なっている。S1は船舶の分布が比較的限定的で、日本沿岸部に集中した検出パターンを示している。S2は沖合にも及ぶ広範囲での検出が示されている。 S2について、沿岸に近いほど船舶の検出が多いことがわかる。一方で沖合では空白のセル、すなわち船舶が検出されなかったセルが散在している。日本のEEZ内だと、特に日本海側の沖合にて船舶が検出されなかったセルが多く分布していることがわかる。
 
-## 0.5
+## S1/S2(0.5)
 
 ```{r}
 ## S1(0.5)
@@ -222,3 +500,196 @@ fig_s2_0.5
 ```
 
 　0.1度毎と同様、S1とS2で検出パターンが異なっている。そして双方とも沿岸側に船舶の検出が集中している。
+　
+　
+
+## 空白セル
+
+```{r}
+fig_white_cells <- ggplot() +  
+  # eez
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  # white cells
+  geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.8)+ 
+  coord_sf(xlim = c(120, 155), ylim = c(20, 47), expand = FALSE) +
+  labs(fill = "S1 detections") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=13),
+        legend.title = element_text(size=15))  #+
+fig_white_cells
+```
+
+ S2データに基づく空白セルの分布と同様に、日本のEEZ内で特に日本海側の沖合に空白セルが多く分布していることがわかる。また南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中している。
+
+
+
+## AIS
+
+```{r}
+fig_ais_0.1 <- ggplot() + 
+  geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  xlim(125, 146) + ylim(25, 47) +
+  scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S2 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
+fig_ais_0.1
+```
+
+  S2・空白セルデータに基づく分布と同様に、日本海側での空白セルの分布が顕著である。また空白セルデータでも示されていたように、南西のEEZ境界線付近や九州・沖縄の西側の沖合に空白セルが分布している。
+
+
+
+## 複合
+
+  各データを用いて複合的にプロット、以下の4パターンを作成
+  
+  1. S2+空白セル
+  2. AIS+空白セル
+  3. AIS+S2
+  4. S2+空白セル+AIS
+  
+  なお、S1はS2と比較して検出数が少なく、また分布も限定的であるため、S1を含む複合図は作成しない
+  加えて、複数のデータによるdetectionを重ねたときどこが空白になるかを強調したいため、detection部分は黒でプロットする
+
+### S2+空白セル
+
+```{r}
+fig_white_cells_s2 <- ggplot() +  
+  geom_tile(data = s2_dat_na_0.1, aes(x=lon, y=lat, fill=log(total_ditections)), colour = "black")+ 
+  # eez
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  # white cells
+  geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3)+ 
+  coord_sf(xlim = c(120, 155), ylim = c(20, 47), expand = FALSE) +
+  #scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S1 detections") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+fig_white_cells_s2
+```
+
+  日本海側、特に北陸沖での空白セル同士の重なりが多く見られる。また南西のEEZ境界線付近や九州・沖縄の西側の沖合にも空白セルの重なりが点在している。
+
+
+
+### 空白セル+AIS
+
+```{r}
+fig_white_cells_ais <- ggplot() + 
+  geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  # white cells
+  geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
+  xlim(125, 146) + ylim(25, 47) +
+  #scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S2 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true")`
+fig_white_cells_ais
+```
+
+　S2+空白セルと同様、北陸沖、南西のEEZ境界線付近、九州・沖縄の西側の沖合に空白セルの重なりが分布している。
+
+
+
+### AIS+S2
+
+```{r}
+fig_s2_ais <- ggplot() + 
+  geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  geom_tile(data = s2_dat_na_0.1, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) + 
+  xlim(125, 146) + ylim(25, 47) +
+  #scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S2 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true")`
+fig_s2_ais
+```
+
+　プロットの改善が必要(重なりと空白セルがわかりにくい、2025/08/28)
+
+
+
+### S2+空白セル+AIS
+
+```{r}
+fig_combined <- ggplot() + 
+  geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  geom_tile(data = s2_dat_na_0.1, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  # white cells
+  geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
+  xlim(125, 146) + ylim(25, 47) +
+  #scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S2 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true")`
+fig_combined
+```
+
+
+
+# result
+
+  ここではS1/S2・水産庁が特定した空白セル・AISのdetectionを用いて、日本のEEZ内の船舶検出の分布をプロットした。
+  S1による検出は日本沿岸部に集中し、比較的限定的な分布を示した。一方でS2では沖合を含む広範囲に分布が確認され、沿岸に近いほど検出数が多い傾向を示した。特に日本海側の沖合では空白セル（検出なし）が多く分布していることがわかった。
+  水産庁が特定した空白セルを可視化した結果、S2と同様に日本海側の沖合に空白セルが顕著に分布していた。その他にも、南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中していた。
+  AISデータに基づく分布でも、日本海側における空白セルが顕著であり、S2・空白セルデータと同様の傾向を示した。特に南西EEZ境界付近や九州・沖縄西方の沖合域に空白が重なる点は一致している。
+
+
