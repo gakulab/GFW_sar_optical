@@ -6,7 +6,15 @@ editor: visual
 
 # outline
 
- S1/S2・水産庁が特定した空白セル・AISのdetectionを用いて、日本のEEZ内の船舶検出数をプロット
+ S1/S2・水産庁が特定した空白セル・AISのdetectionを用いて、日本のEEZ内の漁船分布を可視化
+ 
+# motivations
+
+  近年再生可能エネルギーの導入拡大に伴い、洋上風力発電の導入が検討されている。洋上風力は温室効果ガス削減に貢献しうる一方で、導入場所において漁業の操業が困難になることが想定され、漁業に大きな影響を与える可能性がある。これを踏まえ、洋上風力の促進区域の指定は、その海域で操業している漁業に支障を及ぼさないことを考慮する必要があり、支障を及ぼすことが見込まれる場合は、促進区域の指定は行わないことになっている。そのため、洋上風力発電の導入をめぐる調整において、「この場所では日常的に操業していない」「ここでは漁業に支障が出る」といった情報を提示する必要がある。そしてこうした判断を裏づけるためには、実際にどの海域で漁業活動が行われているのか、または行われていないのかを定量的に把握することが重要となる。
+
+# goals
+
+  S1/S2・水産庁が特定した空白セル・AISのdetectionを用いて、日本のEEZ内の漁船の分布を可視化・提示し、洋上風力発電の導入の検討に寄与する
 
 # setting
 
@@ -36,47 +44,11 @@ library(openxlsx)
 library(sparklyr)
 ```
 
-# load data
-
-## S1/S2 data
-
-　GFWによるS1及びS2の船舶検出データをBigQueryから取得し、Rに読み込む
-
-```{r}
-projectid = "fish-database-275116"
-
-# S1
-sql <- "SELECT * FROM `fish-database-275116.GFW_Data.S1_published_detections_Zihan`;"
-tb <- bq_project_query(projectid, sql)
-s1_dat <- bq_table_download(tb)
-
-# S2
-sql <- "SELECT * FROM `fish-database-275116.GFW_Data.S2_detections_Zihan`;"
-tb <- bq_project_query(projectid, sql)
-s2_dat <- bq_table_download(tb)
-
-skim(s1_dat)
-skim(s2_dat)
-```
 
 
+# function 
 
-## white cells data
-
-  水産庁より操業実績のない空白セルのデータを読み込む
-
-```{r}
-# white cells
-white_cells <- read.xlsx("~/Google Drive/Shared drives/gakuLab_data/Original/水産庁/EEZ水域利用/緯度経度データ（水域利用図の実績なし部分）.xlsx")
-```
-
-
-
-## AIS data
-
-  GFWによるAISデータをSpark経由で読み込む
-  
-### function to load GFW data
+　AISデータを読み込む関数を定義
 
 ```{r}
 load_gfw_data <- function(# default setting
@@ -258,8 +230,63 @@ load_gfw_data <- function(# default setting
 ```
 
 
+# load data
 
-### load data
+  本分析では、以下の3つのデータを用いる
+  
+  1. S1/S2データ
+    GFWによるS1及びS2の漁船データ
+    本分析では、AISを搭載していない漁船に絞る
+    ここでの空白セルは、AISを搭載していない漁船の操業がないことを示している
+    
+  2. 空白セルデータ
+    水産庁より操業実績のない空白セルのデータ
+    ここでの空白セルは、大臣許可漁業の操業がないことを示している
+  
+  3. AISデータ
+    GFWによるAISデータ
+    ここでの空白セルは、AISを搭載している漁船の操業がないことを示している
+  
+  
+
+## S1/S2 data
+
+　GFWによるS1及びS2の漁船データをBigQueryから取得し、Rに読み込む
+
+```{r}
+projectid = "fish-database-275116"
+
+# S1
+sql <- "SELECT * FROM `fish-database-275116.GFW_Data.S1_published_detections_Zihan`;"
+tb <- bq_project_query(projectid, sql)
+s1_dat <- bq_table_download(tb)
+
+# S2
+sql <- "SELECT * FROM `fish-database-275116.GFW_Data.S2_detections_Zihan`;"
+tb <- bq_project_query(projectid, sql)
+s2_dat <- bq_table_download(tb)
+
+# check
+skim(s1_dat)
+skim(s2_dat)
+```
+
+
+
+## white cells data
+
+  水産庁より大臣許可漁業の操業実績のない空白セルのデータを読み込む
+
+```{r}
+# white cells
+white_cells <- read.xlsx("~/Google Drive/Shared drives/gakuLab_data/Original/水産庁/EEZ水域利用/緯度経度データ（水域利用図の実績なし部分）.xlsx")
+```
+
+
+
+## AIS data
+
+  GFWによるAISデータをSparkで読み込む
 
 ```{r}
 # GFW daily data 
@@ -284,21 +311,21 @@ temp_main <- sparklyr::sdf_bind_rows(daily_2018,
 
 ```{r}
 # EEZ
-eez_sf1 <-  st_read("~/Google Drive/Shared drives/gakuLab_data/Original/NEDO/EEZ_land_union_v3_202003/EEZ_Land_v3_202030.shp") |> dplyr::filter(stringr::str_detect(UNION, "Japan")) |>
+eez_sf1 <-  st_read("~/Google Drive/Shared drives/gakuLab_data/Original/NEDO/EEZ_land_union_v3_202003/EEZ_Land_v3_202030.shp")  %>%  dplyr::filter(stringr::str_detect(UNION, "Japan"))  %>% 
   st_transform(4326)
-eez_sf2 <- eez_sf1 |>
+eez_sf2 <- eez_sf1  %>% 
   st_union()
 eez_sf <-   eez_sf2
 
 # Japan land
-japan_sf <- ne_countries(country = c('japan'),scale="large", returnclass = "sf") |>　st_transform(crs = 4326)
+japan_sf <- ne_countries(country = c('japan'),scale="large", returnclass = "sf")  %>% 　st_transform(crs = 4326)
 ```
 
 # data wrangling
 
 ## S1/S2 data
 
-　ssvidが欠損しているデータに絞り、それらの緯度・経度を0.1または0.5度に丸めて集計する
+　AIS未搭載の漁船を抽出したいため、ssvidが欠損しているデータに絞り、それらの緯度・経度を0.1または0.5度に丸めて集計する
 
 ```{r}
 # only missing value in ssvid
@@ -350,37 +377,37 @@ s2_dat_na_0.5 <- s2_dat_na %>%
 
 ## AIS data
 
+  　GFWによるAISデータを漁船に絞り、緯度・経度を0.1度に丸めて集計する
+
 ```{r}
+# fishing vessel class
 fishing_vessel_set <- c("drifting_longlines", "fish_factory","fishing","fixed_gear",           
 "other_purse_seines", "pole_and_line","pots_and_traps",    
 "purse_seines",     "set_longlines","squid_jigger",    "trawlers",     "tuna_purse_seines")
 
 temp_dat <- temp_main
 
+# data flame lat lon
 temp_dat_cleaned <- temp_dat %>% 
   
-  # semi_join(
-  #   tbl(spark_conn, "japan_eez_polygons"),
-  #   sql_on = "ST_Contains(RHS.geometry, LHS.geometry)"
-  # ) %>%
+  select(ssvid, first_timestamp, last_timestamp, avg_lat_lon) %>%
   
   sparklyr::mutate(year_st  = substring_index(first_timestamp, "-",1),
           month_st  = substring_index(substring_index(first_timestamp, "-",2), "-", -1), 
-          day_st  = str_sub(substring_index(first_timestamp, " ", 1), -2)) |> 
+          day_st  = str_sub(substring_index(first_timestamp, " ", 1), -2))  %>%  
+  
   # mutate date  for JP time     
     sparklyr::mutate(first_timestamp_jp = from_utc_timestamp(first_timestamp, "Asia/Tokyo"),
           last_timestamp_jp = from_utc_timestamp(last_timestamp, "Asia/Tokyo"),
           month_jp = month(first_timestamp_jp), 
           year_jp = year(first_timestamp_jp),
           day_jp = day(first_timestamp_jp),
-          year = as.numeric(year_jp))|> 
+          year = as.numeric(year_jp)) %>%  
   
   sparklyr::mutate(detect_lon = as.numeric(str_sub(substring_index(avg_lat_lon, " ", 1), start = 7L, end = -1L)), 
     detect_lat = as.numeric(str_sub(substring_index(avg_lat_lon, " ", -1), start = 1L, end = -2L)),
     lat_index  = round(detect_lat, temp_round),
     lon_index  = round(detect_lon, temp_round)) %>%
-  # sparklyr::mutate(lat_index = round(detect_lat, temp_round),
-  #        lon_index = round(detect_lon, temp_round)) %>%
   
   left_join(vessel_list_gfw, by = c("ssvid", "year_st" = "year")) %>% 
   filter(best_vessel_class %in% fishing_vessel_set) %>% 
@@ -403,7 +430,7 @@ ais_dat <- temp_dat_cleaned %>% collect()
 
 # plot
 
-　作成した 0.1・0.5度の集計データを日本地図上にプロット、S1・S2による船舶の空間分布を可視化
+　作成した 0.1・0.5度の集計データを日本地図上にプロット、漁船の分布を可視化
 
 ## S1/S2(0.1)
 
@@ -451,7 +478,8 @@ fig_s2_0.1 <- ggplot() +
 fig_s2_0.1
 ```
 
-S1とS2で検出パターンが異なっている。S1は船舶の分布が比較的限定的で、日本沿岸部に集中した検出パターンを示している。S2は沖合にも及ぶ広範囲での検出が示されている。 S2について、沿岸に近いほど船舶の検出が多いことがわかる。一方で沖合では空白のセル、すなわち船舶が検出されなかったセルが散在している。日本のEEZ内だと、特に日本海側の沖合にて船舶が検出されなかったセルが多く分布していることがわかる。
+ S1とS2で分布のパターンが異なっている。S1は漁船の分布が比較的限定的で、日本沿岸部に集中した分布を示している。S2は沖合にも及ぶ広範囲での分布が示されている。 
+ S2について、沿岸に近いほど漁船が多いことがわかる。一方で沖合では空白のセル、すなわちAIS未搭載の漁船が操業していないセルが散在している。日本のEEZ内だと、特に日本海側の沖合にて漁船の操業が確認されなかったセルが多く分布していることがわかる。
 
 ## S1/S2(0.5)
 
@@ -499,7 +527,7 @@ fig_s2_0.5 <- ggplot() +
 fig_s2_0.5
 ```
 
-　0.1度毎と同様、S1とS2で検出パターンが異なっている。そして双方とも沿岸側に船舶の検出が集中している。
+　0.1度毎と同様、S1とS2で分布が異なっている。そして双方とも沿岸側に漁船の分布が集中している。
 　
 　
 
@@ -522,10 +550,10 @@ fig_white_cells <- ggplot() +
         panel.grid = element_blank(),
         legend.text = element_text(angle=45,hjust=1,size=13),
         legend.title = element_text(size=15))  #+
-fig_white_cells
+fig_white_cells #650*600
 ```
 
- S2データに基づく空白セルの分布と同様に、日本のEEZ内で特に日本海側の沖合に空白セルが多く分布していることがわかる。また南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中している。
+ S2データに基づく空白セルの分布と同様に、日本のEEZ内で特に日本海側の沖合に空白セル、すなわち大臣許可漁業が操業していないセルが多く分布していることがわかる。また南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中している。
 
 
 
@@ -553,7 +581,7 @@ fig_ais_0.1 <- ggplot() +
 fig_ais_0.1
 ```
 
-  S2・空白セルデータに基づく分布と同様に、日本海側での空白セルの分布が顕著である。また空白セルデータでも示されていたように、南西のEEZ境界線付近や九州・沖縄の西側の沖合に空白セルが分布している。
+  S2・空白セルデータに基づく分布と同様に、日本海側での空白セル、すなわちAIS搭載漁船が見られないセルが顕著である。また空白セルデータでも示されていたように、南西のEEZ境界線付近や九州・沖縄の西側の沖合に空白セルが分布している。
 
 
 
@@ -566,8 +594,10 @@ fig_ais_0.1
   3. AIS+S2
   4. S2+空白セル+AIS
   
-  なお、S1はS2と比較して検出数が少なく、また分布も限定的であるため、S1を含む複合図は作成しない
+  なお、S1はS2と比較して分布が少なく、また分布も限定的であるため、S1を含む複合図は作成しない
   加えて、複数のデータによるdetectionを重ねたときどこが空白になるかを強調したいため、detection部分は黒でプロットする
+  
+  結果の解釈について、漁船はAIS搭載・未搭載で区分できることから、S2及びAISによる分布を重ねた上で空白の部分は、漁業が操業していないエリアであると解釈する。
 
 ### S2+空白セル
 
@@ -593,7 +623,7 @@ fig_white_cells_s2 <- ggplot() +
 fig_white_cells_s2
 ```
 
-  日本海側、特に北陸沖での空白セル同士の重なりが多く見られる。また南西のEEZ境界線付近や九州・沖縄の西側の沖合にも空白セルの重なりが点在している。
+  日本海側、特に北陸沖での空白セル同士の重なりが点在している。また南西のEEZ境界線付近や九州・沖縄の西側の沖合にも空白セルの重なりが点在している。
 
 
 
@@ -652,7 +682,7 @@ fig_s2_ais <- ggplot() +
 fig_s2_ais
 ```
 
-　プロットの改善が必要(重なりと空白セルがわかりにくい、2025/08/28)
+　日本海沖を中心にまばらに空白セルが点在している。ここでの空白セルは、AIS搭載・未搭載の漁船どちらも操業されていないことを示しており、漁業が操業されていないと解釈する。
 
 
 
@@ -683,13 +713,15 @@ fig_combined <- ggplot() +
 fig_combined
 ```
 
+  日本海沖にいくつか空白セルの重なりが見られるが非常に少なく、ほぼ全ての海域で、AIS搭載漁船または未搭載漁船のいずれかが操業している。
+
 
 
 # result
 
-  ここではS1/S2・水産庁が特定した空白セル・AISのdetectionを用いて、日本のEEZ内の船舶検出の分布をプロットした。
-  S1による検出は日本沿岸部に集中し、比較的限定的な分布を示した。一方でS2では沖合を含む広範囲に分布が確認され、沿岸に近いほど検出数が多い傾向を示した。特に日本海側の沖合では空白セル（検出なし）が多く分布していることがわかった。
-  水産庁が特定した空白セルを可視化した結果、S2と同様に日本海側の沖合に空白セルが顕著に分布していた。その他にも、南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中していた。
-  AISデータに基づく分布でも、日本海側における空白セルが顕著であり、S2・空白セルデータと同様の傾向を示した。特に南西EEZ境界付近や九州・沖縄西方の沖合域に空白が重なる点は一致している。
-
+  ここではS1/S2・水産庁が特定した空白セル・AISのdetectionを用いて、日本のEEZ内の漁船の分布をプロットした。
+  S1による漁船の分布は日本沿岸部に集中し、比較的限定的な分布を示した。一方でS2では沖合を含む広範囲に分布が確認され、沿岸に近いほど多く分布する傾向を示した。特に日本海側の沖合では空白セル（AIS未搭載の漁船の操業がない）が多く分布していることがわかった。
+  水産庁が特定した空白セルを可視化した結果、S2と同様に日本海側の沖合に空白セル（大臣許可漁業の操業がない）が顕著に分布していた。その他にも、南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中していた。
+  AISデータに基づく分布でも、日本海側における空白セル（AIS搭載の漁船の操業がない）が顕著であり、S2・空白セルデータと同様の傾向を示した。特に南西EEZ境界付近や九州・沖縄西方の沖合域に空白が重なる点は一致している。
+  3つのデータを組み合わせた結果、日本海沖において、AIS搭載・未搭載の漁船どちらも操業がされていないセルが点在していることがわかった。一方でほぼ全ての海域で、AIS搭載漁船または未搭載漁船のいずれかの操業が確認されており、AIS搭載・未搭載の漁船どちらも操業がされていないセルは非常に少ないことがわかった。この結果から、日本海沖に点在する一部の海域では操業がほとんど行われていない可能性が示唆された。これらの海域は、漁業に支障をきたす可能性が比較的低いと考えられ、洋上風力発電の促進区域として検討する上で有力な情報となりうる。しかし、多くの海域ではAIS搭載漁船または未搭載漁船のいずれかによる漁業の操業が確認されており、促進区域として指定できる海域は非常に少ないことが示された。。
 
