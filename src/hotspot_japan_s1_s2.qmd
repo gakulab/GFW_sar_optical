@@ -10,6 +10,17 @@ editor: visual
  
 # motivations
 
+## 9/8
+  気候変動の緩和、脱炭素化、エネルギー安全保障に対する関心の高まりにより、洋上風力発電が世界中で急速に拡大している[1–4]。世界の洋上風力発電設備の導入数は2017年以降倍増しており、今後その導入ペースは7倍にまで加速すると推定されている[5]。そして2021年には、世界の洋上風力発電の容量が57GWに達し、前年比60%を超える増加を示した[3,6]。そして2035年までに519GWに達すると予測されている[7]。中でもイギリスは、2022年にヨーロッパの洋上風力発電容量の45%、世界の24%を占めている[8]。またアメリカでは導入が遅れているものの、急速な拡大が見込まれており、2030年までに30GW、2050年までに110GWを目指している[3]。
+
+日本においても洋上風力発電の導入の拡大を図っており、2030年度温室効果ガス46%削減と2050年カーボンニュートラル達成という目標を掲げている[9,10]。そして2020年のグリーン成長戦略では、2030年までに洋上風力発電10GW、2040年までに30-45GW（浮体式を含む）の導入を目標に設定した[10]。洋上風力発電は土地面積による制約がなく、環境への影響が少ないとされており、また大規模な運営によってコスト削減が可能であることから[11]、日本は従来の主要エネルギー源の代わりとなる再生可能エネルギーとして導入に力を入れている。
+
+2018年には海洋再生可能エネルギー発電設備等に係る海域の利用の促進に関する法律（洋上再エネ促進法）が制定、翌年施行され、港湾区域外の公共海域を最大30年間占有する標準化された規制が確立された[11,12]。この制度において事業は、地域の漁業者との協議・合意達成を前提としつつも、その後の不確実性が考慮されていないことから、合意形成に課題を残している[11]。一方で、日本の浅海域は限られているため、将来的な導入拡大にはEEZでの開発が不可欠とされている[13]。EEZでの事業は、深海域での浮体式風力発電を前提とする技術的課題に加え、遠洋・沖合漁業や外国漁船を含む利害関係者との国際的な調整が必要であり、領海での事業とは法制度・ステークホルダー・技術条件のいずれにおいても性質が大きく異なる[14]。
+
+洋上風力発電の拡大は、漁業に対する影響が懸念されている。その中でも重大な懸念は、漁業との空間的競合であり、洋上風力発電の導入によってこれまで漁業者が利用していた漁場が失われる可能性がある[5,15]。そして追い出された漁業者は、他の海域へ漁場を移すことを余儀なくされ、他の漁業者との競合が激しくなり、その漁場の過剰利用へとつながる可能性がある[15]。こうした洋上風力発電の導入による影響は、漁業の生計を脅かす可能性もあり、その影響は加工業者といったサプライチェーンに波及し、沿岸地域の社会経済全体に影響をもたらす[5]。にもかかわらず、導入の漁業への影響評価は不十分であることが多く、また漁業関係者の協議への参画は限定的である[5,15]。日本においても、導入の過程、特に漁業者と事業間での合意形成において、漁業との空間競合が大きな課題となっており、漁業への影響について懸念の声が上がっている[10,11,14]。このことから、洋上風力発電の導入をめぐる調整にて、漁業への影響を検討する中で、実際にどの海域で漁業活動が行われているかを定量的に把握し、提示することが求められる。
+
+
+## 9/2
   近年再生可能エネルギーの導入拡大に伴い、洋上風力発電の導入が検討されている。洋上風力は温室効果ガス削減に貢献しうる一方で、導入場所において漁業の操業が困難になることが想定され、漁業に大きな影響を与える可能性がある。これを踏まえ、洋上風力の促進区域の指定は、その海域で操業している漁業に支障を及ぼさないことを考慮する必要があり、支障を及ぼすことが見込まれる場合は、促進区域の指定は行わないことになっている。そのため、洋上風力発電の導入をめぐる調整において、「この場所では日常的に操業していない」「ここでは漁業に支障が出る」といった情報を提示する必要がある。そしてこうした判断を裏づけるためには、実際にどの海域で漁業活動が行われているのか、または行われていないのかを定量的に把握することが重要となる。
 
 # goals
@@ -723,5 +734,38 @@ fig_combined
   S1による漁船の分布は日本沿岸部に集中し、比較的限定的な分布を示した。一方でS2では沖合を含む広範囲に分布が確認され、沿岸に近いほど多く分布する傾向を示した。特に日本海側の沖合では空白セル（AIS未搭載の漁船の操業がない）が多く分布していることがわかった。
   水産庁が特定した空白セルを可視化した結果、S2と同様に日本海側の沖合に空白セル（大臣許可漁業の操業がない）が顕著に分布していた。その他にも、南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中していた。
   AISデータに基づく分布でも、日本海側における空白セル（AIS搭載の漁船の操業がない）が顕著であり、S2・空白セルデータと同様の傾向を示した。特に南西EEZ境界付近や九州・沖縄西方の沖合域に空白が重なる点は一致している。
-  3つのデータを組み合わせた結果、日本海沖において、AIS搭載・未搭載の漁船どちらも操業がされていないセルが点在していることがわかった。一方でほぼ全ての海域で、AIS搭載漁船または未搭載漁船のいずれかの操業が確認されており、AIS搭載・未搭載の漁船どちらも操業がされていないセルは非常に少ないことがわかった。この結果から、日本海沖に点在する一部の海域では操業がほとんど行われていない可能性が示唆された。これらの海域は、漁業に支障をきたす可能性が比較的低いと考えられ、洋上風力発電の促進区域として検討する上で有力な情報となりうる。しかし、多くの海域ではAIS搭載漁船または未搭載漁船のいずれかによる漁業の操業が確認されており、促進区域として指定できる海域は非常に少ないことが示された。。
+  3つのデータを組み合わせた結果、日本海沖において、AIS搭載・未搭載の漁船どちらも操業がされていないセルが点在していることがわかった。一方でほぼ全ての海域で、AIS搭載漁船または未搭載漁船のいずれかの操業が確認されており、AIS搭載・未搭載の漁船どちらも操業がされていないセルは非常に少ないことがわかった。この結果から、日本海沖に点在する一部の海域では操業がほとんど行われていない可能性が示唆された。これらの海域は、漁業に支障をきたす可能性が比較的低いと考えられ、洋上風力発電の促進区域として検討する上で有力な情報となりうる。しかし、多くの海域ではAIS搭載漁船または未搭載漁船のいずれかによる漁業の操業が確認されており、促進区域として指定できる海域は非常に少ないことが示された。
+
+
+
+# reference
+[1]	M. Püts, A. Kempf, C. Möllmann, M. Taylor, Trade-offs between fisheries, offshore wind farms and marine protected areas in the southern North Sea – Winners, losers and effective spatial management, Mar. Policy 152 (2023) 105574.
+
+[2]	A. Lipsky, A. Silva, F. Gilmour, Y. Arjona, F. Hogan, J. Lloret, D. Bolser, S. Haase, D. Oesterwind, T. ten Brink, M. Roach, K. Ford, Fisheries independent surveys in a new era of offshore wind energy development, ICES J. Mar. Sci. 82 (2025) fsae060.
+
+[3]	E.T. Methratta, A. Silva, A. Lipsky, K. Ford, D. Christel, L. Pfeiffer, Science priorities for offshore wind and fisheries research in the Northeast U.s. continental Shelf ecosystem: Perspectives from scientists at the national marine fisheries service, Mar. Coast. Fish. 15 (2023) e10242.
+
+[4]	K.A. Alexander, T.A. Wilding, J. Jacomina Heymans, Attitudes of Scottish fishers towards marine renewable energy, Mar. Policy 37 (2013) 239–244.
+
+[5]	C.L. Szostek, S.C.L. Watson, N. Trifonova, N.J. Beaumont, B.E. Scott, Spatial conflict in offshore wind farms: Challenges and solutions for the commercial fishing industry, Energy Policy 200 (2025) 114555.
+
+[6]	GWEC, Global wind energy report 2022, (2022). https://www.lerenovaveis.org/contents/lerpublication/gwec_2022_mar_global-wind-report-2022.pdf.
+
+[7]	WFO, Global Offshore Wind Report: 2022, (2023). https://wfo-global.org/wp-content/uploads/2023/03/WFO_Global-Offshore-Wind-Report-2022.pdf.
+
+[8]	CrownEstate, Offshore Wind Report 2022, (2022). https://www.thecrownestate.co.uk/media/4378/final-published_11720_owoperationalreport_2022_tp_250423.pdf.
+
+[9]	Policy Speech by the Prime Minister to the 203rd Session of the Diet (Speeches and Statements by the Prime Minister), https://japan.kantei.go.jp/99_suga/statement/202010/_00006.html (accessed September 7, 2025).
+
+[10]	K. Iwata, S. Kyoi, Y. Ushifusa, Public attitudes of offshore wind energy in Japan: An empirical study using choice experiments, Cleaner Energy Systems 4 (2023) 100052.
+
+[11]	S. Tajima, K. Yamaguchi, H. Shiroyama, Consensus building with fishermen on offshore wind farms in Japan: Current status and policy recommendations, Mar. Policy 160 (2024) 105975.
+
+[12]	Act on Promoting the Utilization of Sea Areas for the Development of Marine Renewable Energy Power Generation Facilities - English - Japanese Law Translation, (n.d.). https://www.japaneselawtranslation.go.jp/en/laws/view/3580/en (accessed September 7, 2025).
+
+[13]	Ryota Wada, Amir R. Nejad, Kazuhiro Iijima, Junji Shimazaki, Mihaela Ibrion, Shinnosuke Wanaka, Hideo Nomura, Yoshitaka Mizushima, Takuya Nakashima, Ken Takagi, Floating Offshore Wind in Japan: Addressing the Challenges, Efforts, and Research gaps, Wind Energ. Sci. Discuss (2025) 1–58.
+
+[14]	IEEJ, Challenges and solutions to deploying floating offshore wind power in Japan, (2024). https://eneken.ieej.or.jp/data/11717.pdf.
+
+[15]	G. Van Hoey, F. Bastardie, S. Birchenough, A. De Backer, A. Gill, S. De Koning, S. Hodgson, S. Mangi Chai, J. Steenbergen, E. Termeer, S. Van den Burg, N. Hintzen, Overview of the effects of offshore wind farms on fisheries and aquaculture: EASME/EMFF/2018/011 lot 1 : Specific contract no. 03 : Final report, 2021.
 
