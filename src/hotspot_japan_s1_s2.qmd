@@ -733,7 +733,7 @@ fig_white_cells_s2 <- ggplot() +
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3)+ 
   coord_sf(xlim = c(120, 155), ylim = c(20, 47), expand = FALSE) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
-  labs(fill = "S1 detections") +
+  labs(fill = "S2 detections (Log)") +
   theme(legend.box = "vertical",
         legend.position = "bottom",
         axis.text = element_text(size=10),
@@ -741,7 +741,7 @@ fig_white_cells_s2 <- ggplot() +
         panel.grid = element_blank(),
         legend.text = element_text(angle=45,hjust=1,size=10),
         legend.title = element_text(size=10))  #+
-fig_white_cells_s2
+fig_white_cells_s2 #600*600
 ```
 
   日本海側、特に北陸沖での空白セル同士の重なりが点在している。また南西のEEZ境界線付近や九州・沖縄の西側の沖合にも空白セルの重なりが点在している。
@@ -764,7 +764,7 @@ fig_white_cells_ais <- ggplot() +
   geom_sf(data = japan_sf) +
   # white cells
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
-  xlim(125, 146) + ylim(25, 47) +
+  xlim(120, 155) + ylim(20, 47) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "S2 detections (Log)") +
   theme(legend.box = "vertical",
@@ -798,7 +798,7 @@ fig_s2_ais <- ggplot() +
   geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
   # Japan Land
   geom_sf(data = japan_sf) + 
-  xlim(125, 146) + ylim(25, 47) +
+  xlim(120, 155) + ylim(20, 47) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "S2 detections (Log)") +
   theme(legend.box = "vertical",
@@ -834,7 +834,7 @@ fig_combined <- ggplot() +
   geom_sf(data = japan_sf) +
   # white cells
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
-  xlim(125, 146) + ylim(25, 47) +
+  xlim(120, 155) + ylim(20, 47) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "S2 detections (Log)") +
   theme(legend.box = "vertical",
