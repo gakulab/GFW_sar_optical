@@ -1,5 +1,6 @@
 ---
 title: "hotspot_japan_s1_s2"
+author: "kaitoh kanazawa"
 format: html
 editor: visual
 ---
@@ -29,18 +30,29 @@ editor: visual
 
 # setting
 
+ 実行環境を整理し、数字表示やメモリ設定を行う
+
 ```{r message=FALSE, warning=FALSE, attr.source='.numberLines', include=FALSE, results=FALSE}
 # 現在の環境にある変数の消去
 #rm(list = ls("all.names" = TRUE))
+
 #データの指数表示を避ける
 options(scipen = 100)
+
 # free memory
 #gc() 
 ```
 
 # load packages
 
+　データ処理や可視化に必要なパッケージの読み込み
+
 ```{r}
+#| label: packages
+#| echo: true
+#| message: false
+#| warning: false
+
 library(bigrquery)
 library(dplyr)
 library(ggplot2)
@@ -62,6 +74,12 @@ library(sparklyr)
 　AISデータを読み込む関数を定義
 
 ```{r}
+#| label: AIS_function
+#| echo: true
+#| message: false
+#| warning: false
+
+# Function to load GFW data using Spark
 load_gfw_data <- function(# default setting
   base_path = "~/Google Drive/Shared drives/gakuLab_data",
   years = 2018:2024,
@@ -79,9 +97,9 @@ load_gfw_data <- function(# default setting
     # Spark接続用の設定
     config <- spark_config()
     config[["spark.serializer"]] <- "org.apache.spark.serializer.KryoSerializer"
-    config[["spark.kryo.registrator"]] <- "org.apache.sedona.core.serde.SedonaKryoRegistrator"
-    config[["spark.sql.extensions"]] <- "org.apache.sedona.sql.SedonaSqlExtensions"
-    config$sparklyr.jars.packages <- "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.7.2-incubating"
+    # config[["spark.kryo.registrator"]] <- "org.apache.sedona.core.serde.SedonaKryoRegistrator"
+    # config[["spark.sql.extensions"]] <- "org.apache.sedona.sql.SedonaSqlExtensions"
+    # config$sparklyr.jars.packages <- "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.7.2-incubating"
     config$spark.sql.catalogImplementation <- "in-memory"
     
     # ハイフン付き要素は[]でアクセス
@@ -265,6 +283,10 @@ load_gfw_data <- function(# default setting
 　GFWによるS1及びS2の漁船データをBigQueryから取得し、Rに読み込む
 
 ```{r}
+#| label: S1S2
+#| echo: true
+#| eval: false
+
 projectid = "fish-database-275116"
 
 # S1
@@ -280,6 +302,10 @@ s2_dat <- bq_table_download(tb)
 # check
 skim(s1_dat)
 skim(s2_dat)
+
+# save
+saveRDS(s1_dat, file = here::here("data","raw","s1_dat.rds"))
+saveRDS(s2_dat, file = here::here("data","raw","s2_dat.rds"))
 ```
 
 
@@ -289,8 +315,15 @@ skim(s2_dat)
   水産庁より大臣許可漁業の操業実績のない空白セルのデータを読み込む
 
 ```{r}
+#| label: white_cells
+#| echo: true
+#| eval: false
+
 # white cells
-white_cells <- read.xlsx("~/Google Drive/Shared drives/gakuLab_data/Original/水産庁/EEZ水域利用/緯度経度データ（水域利用図の実績なし部分）.xlsx")
+white_cells <- openxlsx::read.xlsx("~/Google Drive/Shared drives/gakuLab_data/Original/水産庁/EEZ水域利用/緯度経度データ（水域利用図の実績なし部分）.xlsx")
+
+# save
+saveRDS(white_cells, file = here::here("data","raw","white_cells.rds"))
 ```
 
 
@@ -300,6 +333,10 @@ white_cells <- read.xlsx("~/Google Drive/Shared drives/gakuLab_data/Original/水
   GFWによるAISデータをSparkで読み込む
 
 ```{r}
+#| label: AIS
+#| echo: true
+#| eval: false
+
 # GFW daily data 
 load_gfw_data(years = 2018:2024, include_2025 = TRUE)
 # 
@@ -321,6 +358,11 @@ temp_main <- sparklyr::sdf_bind_rows(daily_2018,
 　地理データを読み込む
 
 ```{r}
+#| label: geo_data
+#| echo: true
+#| message: false
+#| warning: false
+
 # EEZ
 eez_sf1 <-  st_read("~/Google Drive/Shared drives/gakuLab_data/Original/NEDO/EEZ_land_union_v3_202003/EEZ_Land_v3_202030.shp")  %>%  dplyr::filter(stringr::str_detect(UNION, "Japan"))  %>% 
   st_transform(4326)
@@ -339,6 +381,10 @@ japan_sf <- ne_countries(country = c('japan'),scale="large", returnclass = "sf")
 　AIS未搭載の漁船を抽出したいため、ssvidが欠損しているデータに絞り、それらの緯度・経度を0.1または0.5度に丸めて集計する
 
 ```{r}
+#| label: S1S2_processing
+#| echo: true
+#| eval: false
+
 # only missing value in ssvid
 s1_dat_na <- s1_dat[is.na(s1_dat$ssvid),] #17.8%
 s2_dat_na <- s2_dat[is.na(s2_dat$ssvid),] #48.5%
@@ -382,6 +428,12 @@ s2_dat_na_0.5 <- s2_dat_na %>%
   ungroup() %>% 
   mutate(lat = lat_index, lon = lon_index) %>% 
   select(lat, lon, total_ditections)
+
+# save
+saveRDS(s1_dat_na_0.1, file = here::here("data","analyzed","s1_dat_na_0.1.rds"))
+saveRDS(s2_dat_na_0.1, file = here::here("data","analyzed","s2_dat_na_0.1.rds"))
+saveRDS(s1_dat_na_0.5, file = here::here("data","analyzed","s1_dat_na_0.5.rds"))
+saveRDS(s2_dat_na_0.5, file = here::here("data","analyzed","s2_dat_na_0.5.rds"))
 ```
 
 
@@ -391,6 +443,10 @@ s2_dat_na_0.5 <- s2_dat_na %>%
   　GFWによるAISデータを漁船に絞り、緯度・経度を0.1度に丸めて集計する
 
 ```{r}
+#| label: AIS_processing
+#| echo: true
+#| eval: false
+
 # fishing vessel class
 fishing_vessel_set <- c("drifting_longlines", "fish_factory","fishing","fixed_gear",           
 "other_purse_seines", "pole_and_line","pots_and_traps",    
@@ -435,7 +491,36 @@ tbl_cache(spark_conn, "ais_detections")
 
 # collect
 ais_dat <- temp_dat_cleaned %>% collect()
+
+# save
+saveRDS(ais_dat, file = here::here("data","analyzed","ais_dat.rds"))
 ```
+
+
+
+# load data for plot
+
+　これまでに作成した分析用データセットを読み込む
+
+```{r}
+#| label: data_for_plot
+#| message: false
+#| warning: false
+
+
+# S1/S2
+s1_dat_na_0.1 <- readRDS(here::here("data","analyzed","s1_dat_na_0.1.rds"))
+s2_dat_na_0.1 <- readRDS(here::here("data","analyzed","s2_dat_na_0.1.rds"))
+s1_dat_na_0.5 <- readRDS(here::here("data","analyzed","s1_dat_na_0.5.rds"))
+s2_dat_na_0.5 <- readRDS(here::here("data","analyzed","s2_dat_na_0.5.rds"))
+
+# white cells
+white_cells <- readRDS(here::here("data","raw","white_cells.rds"))
+
+# AIS
+ais_dat <- readRDS(here::here("data","analyzed","ais_dat.rds"))
+```
+
 
 
 
@@ -446,6 +531,11 @@ ais_dat <- temp_dat_cleaned %>% collect()
 ## S1/S2(0.1)
 
 ```{r}
+#| label: S1S2_0.1
+#| echo: true
+#| message: false
+#| warning: false
+
 ## S1(0.1)
 fig_s1_0.1 <- ggplot() +  
   geom_tile(data = s1_dat_na_0.1, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
@@ -495,6 +585,11 @@ fig_s2_0.1
 ## S1/S2(0.5)
 
 ```{r}
+#| label: S1S2_0.5
+#| echo: true
+#| message: false
+#| warning: false
+
 ## S1(0.5)
 fig_s1_0.5 <- ggplot() + 
   geom_tile(data = s1_dat_na_0.5, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
@@ -545,6 +640,11 @@ fig_s2_0.5
 ## 空白セル
 
 ```{r}
+#| label: white_cells_plot
+#| echo: true
+#| message: false
+#| warning: false
+
 fig_white_cells <- ggplot() +  
   # eez
   geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
@@ -571,6 +671,11 @@ fig_white_cells #650*600
 ## AIS
 
 ```{r}
+#| label: AIS_plot
+#| echo: true
+#| message: false
+#| warning: false
+
 fig_ais_0.1 <- ggplot() + 
   geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
   #scale_fill_viridis_c(option=temp_virid_op ) +
@@ -613,6 +718,11 @@ fig_ais_0.1
 ### S2+空白セル
 
 ```{r}
+#| label: S2_white_cells
+#| echo: true
+#| message: false
+#| warning: false
+
 fig_white_cells_s2 <- ggplot() +  
   geom_tile(data = s2_dat_na_0.1, aes(x=lon, y=lat, fill=log(total_ditections)), colour = "black")+ 
   # eez
@@ -641,6 +751,11 @@ fig_white_cells_s2
 ### 空白セル+AIS
 
 ```{r}
+#| label: white_cells_AIS
+#| echo: true
+#| message: false
+#| warning: false
+
 fig_white_cells_ais <- ggplot() + 
   geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
   #scale_fill_viridis_c(option=temp_virid_op ) +
@@ -671,6 +786,11 @@ fig_white_cells_ais
 ### AIS+S2
 
 ```{r}
+#| label: AIS_S2
+#| echo: true
+#| message: false
+#| warning: false
+
 fig_s2_ais <- ggplot() + 
   geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
   geom_tile(data = s2_dat_na_0.1, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
@@ -700,6 +820,11 @@ fig_s2_ais
 ### S2+空白セル+AIS
 
 ```{r}
+#| label: all_data
+#| echo: true
+#| message: false
+#| warning: false
+
 fig_combined <- ggplot() + 
   geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
   geom_tile(data = s2_dat_na_0.1, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
