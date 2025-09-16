@@ -65,6 +65,7 @@ library(forcats)
 library(readr)
 library(openxlsx)
 library(sparklyr)
+library(plotly)
 ```
 
 
@@ -263,17 +264,19 @@ load_gfw_data <- function(# default setting
 
   本分析では、以下の3つのデータを用いる
   
-  1. S1/S2データ
+  1. **S1/S2データ**
     GFWによるS1及びS2の漁船データ
-    本分析では、AISを搭載していない漁船に絞る
+    本分析では、AISを搭載していない漁船に絞る（AISデータとの重複を避けるため）
+    合成開口レーダー（SAR）及び光学レーダーにより、その場にいる船舶をリアルタイムで記録・データ化している
     ここでの空白セルは、AISを搭載していない漁船の操業がないことを示している
     
-  2. 空白セルデータ
-    水産庁より操業実績のない空白セルのデータ
-    ここでの空白セルは、大臣許可漁業の操業がないことを示している
+  2. **空白セルデータ**
+    水産庁より、操業実績のない空白セルのデータ（出典：https://www.jfa.maff.go.jp/j/kikaku/eezriyou.html）
+    ここでの空白セルは、一部の大臣許可漁業の操業がないことを示している
   
-  3. AISデータ
+  3. **AISデータ**
     GFWによるAISデータ
+    本データにおける緯度経度は、その船舶が1日に航行した範囲の中心点を示しているため、厳密には正確ではない
     ここでの空白セルは、AISを搭載している漁船の操業がないことを示している
   
   
@@ -355,7 +358,7 @@ temp_main <- sparklyr::sdf_bind_rows(daily_2018,
 
 ## geo data
 
-　地理データを読み込む
+　地理データ（EEZ、日本地図）を読み込む
 
 ```{r}
 #| label: geo_data
@@ -364,7 +367,7 @@ temp_main <- sparklyr::sdf_bind_rows(daily_2018,
 #| warning: false
 
 # EEZ
-eez_sf1 <-  st_read("~/Google Drive/Shared drives/gakuLab_data/Original/NEDO/EEZ_land_union_v3_202003/EEZ_Land_v3_202030.shp")  %>%  dplyr::filter(stringr::str_detect(UNION, "Japan"))  %>% 
+eez_sf1 <- st_read("~/Google Drive/Shared drives/gakuLab_data/Original/NEDO/EEZ_land_union_v3_202003/EEZ_Land_v3_202030.shp")  %>%  dplyr::filter(stringr::str_detect(UNION, "Japan"))  %>% 
   st_transform(4326)
 eez_sf2 <- eez_sf1  %>% 
   st_union()
@@ -526,9 +529,11 @@ ais_dat <- readRDS(here::here("data","analyzed","ais_dat.rds"))
 
 # plot
 
-　作成した 0.1・0.5度の集計データを日本地図上にプロット、漁船の分布を可視化
+　作成した分析用データセットを日本地図上に重ね合わせることで、漁船の分布を可視化。これにより、どの海域で漁船が活動しているか、また漁船の操業が確認されない「空白セル」がどこに存在するかを把握する。
 
-## S1/S2(0.1)
+## S1/S2(0.1度集計)
+
+  GFWによるS1及びS2データのうち、0.1度単位で集計し地図上に可視化。AIS未搭載漁船の分布を捉える
 
 ```{r}
 #| label: S1S2_0.1
@@ -555,7 +560,8 @@ fig_s1_0.1 <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
-fig_s1_0.1 #425*600
+#fig_s1_0.1 #425*600
+ggplotly(fig_s1_0.1)
 
 ## S2(0.1)
 fig_s2_0.1 <- ggplot() + 
@@ -576,13 +582,16 @@ fig_s2_0.1 <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
-fig_s2_0.1
+#fig_s2_0.1
+ggplotly(fig_s2_0.1)
 ```
 
  S1とS2で分布のパターンが異なっている。S1は漁船の分布が比較的限定的で、日本沿岸部に集中した分布を示している。S2は沖合にも及ぶ広範囲での分布が示されている。 
  S2について、沿岸に近いほど漁船が多いことがわかる。一方で沖合では空白のセル、すなわちAIS未搭載の漁船が操業していないセルが散在している。日本のEEZ内だと、特に日本海側の沖合にて漁船の操業が確認されなかったセルが多く分布していることがわかる。
 
-## S1/S2(0.5)
+## S1/S2(0.5度集計)
+
+  GFWによるS1及びS2データのうち、0.5度単位で集計し地図上に可視化。解像度を粗くすることで、AIS未搭載漁船の分布の大まかな傾向を捉える。
 
 ```{r}
 #| label: S1S2_0.5
@@ -609,7 +618,8 @@ fig_s1_0.5 <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
-fig_s1_0.5
+#fig_s1_0.5
+ggplotly(fig_s1_0.5)
 
 ## S2(0.5)
 fig_s2_0.5 <- ggplot() +  
@@ -630,7 +640,8 @@ fig_s2_0.5 <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
-fig_s2_0.5
+#fig_s2_0.5
+ggplotly(fig_s2_0.5)
 ```
 
 　0.1度毎と同様、S1とS2で分布が異なっている。そして双方とも沿岸側に漁船の分布が集中している。
@@ -638,6 +649,8 @@ fig_s2_0.5
 　
 
 ## 空白セル
+
+  ここでは、一部の大臣許可漁業の操業が確認されなかったセル（空白セル）を可視化。EEZ内で一部の大臣許可漁業が行われていない海域を把握。
 
 ```{r}
 #| label: white_cells_plot
@@ -661,7 +674,8 @@ fig_white_cells <- ggplot() +
         panel.grid = element_blank(),
         legend.text = element_text(angle=45,hjust=1,size=13),
         legend.title = element_text(size=15))  #+
-fig_white_cells #650*600
+#fig_white_cells #650*600
+ggplotly(fig_white_cells)
 ```
 
  S2データに基づく空白セルの分布と同様に、日本のEEZ内で特に日本海側の沖合に空白セル、すなわち大臣許可漁業が操業していないセルが多く分布していることがわかる。また南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中している。
@@ -669,6 +683,8 @@ fig_white_cells #650*600
 
 
 ## AIS
+
+  GFWによるAISデータを0.1度単位で集計し地図上に可視化。AIS搭載漁船の分布の全体像を捉える。
 
 ```{r}
 #| label: AIS_plot
@@ -694,26 +710,29 @@ fig_ais_0.1 <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
-fig_ais_0.1
+#fig_ais_0.1
+ggplotly(fig_ais_0.1)
 ```
 
   S2・空白セルデータに基づく分布と同様に、日本海側での空白セル、すなわちAIS搭載漁船が見られないセルが顕著である。また空白セルデータでも示されていたように、南西のEEZ境界線付近や九州・沖縄の西側の沖合に空白セルが分布している。
 
 
 
-## 複合
+## 空白セルの特定
 
-  各データを用いて複合的にプロット、以下の4パターンを作成
+  各データを組み合わせて以下の4パターンを作成・プロットし、漁船の操業が確認できるまたは確認できないエリアを区分する
   
-  1. S2+空白セル
-  2. AIS+空白セル
-  3. AIS+S2
-  4. S2+空白セル+AIS
+  1. **S2+空白セル**：AIS未搭載漁船と空白セルの重なり
+  2. **AIS+空白セル**：搭載漁船と空白セルの重なり
+  3. **AIS+S2**：両データで検知された操業分布
+  4. **S2+空白セル+AIS**：3データを統合
   
   なお、S1はS2と比較して分布が少なく、また分布も限定的であるため、S1を含む複合図は作成しない
   加えて、複数のデータによるdetectionを重ねたときどこが空白になるかを強調したいため、detection部分は黒でプロットする
   
-  結果の解釈について、漁船はAIS搭載・未搭載で区分できることから、S2及びAISによる分布を重ねた上で空白の部分は、漁業が操業していないエリアであると解釈する。
+  結果の解釈について、漁船はAIS搭載・未搭載で区分できることから、S2及びAISによる分布を重ねた上で空白の部分は、漁業活動が行われていない可能性の高いエリアであると解釈する。
+  
+  
 
 ### S2+空白セル
 
@@ -733,18 +752,19 @@ fig_white_cells_s2 <- ggplot() +
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3)+ 
   coord_sf(xlim = c(120, 155), ylim = c(20, 47), expand = FALSE) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
-  labs(fill = "S2 detections (Log)") +
+  labs(fill = "detections (Log)") +
   theme(legend.box = "vertical",
-        legend.position = "bottom",
+        legend.position = "none",
         axis.text = element_text(size=10),
         panel.background = element_rect(fill="lightblue"),
         panel.grid = element_blank(),
         legend.text = element_text(angle=45,hjust=1,size=10),
         legend.title = element_text(size=10))  #+
-fig_white_cells_s2 #600*600
+#fig_white_cells_s2 #600*600
+ggplotly(fig_white_cells_s2)
 ```
 
-  日本海側、特に北陸沖での空白セル同士の重なりが点在している。また南西のEEZ境界線付近や九州・沖縄の西側の沖合にも空白セルの重なりが点在している。
+  日本海側、特に北陸沖での空白セル同士の重なりが点在しており、AIS未搭載漁船の操業がないことを示している。また南西のEEZ境界線付近や九州・沖縄の西側の沖合にも空白セルの重なりが点在している。
 
 
 
@@ -766,9 +786,9 @@ fig_white_cells_ais <- ggplot() +
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
   xlim(120, 155) + ylim(20, 47) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
-  labs(fill = "S2 detections (Log)") +
+  labs(fill = "detections (Log)") +
   theme(legend.box = "vertical",
-        legend.position = "bottom",
+        legend.position = "none",
         axis.text = element_text(size=10),
         panel.background = element_rect(fill="lightblue"),
         panel.grid = element_blank(),
@@ -776,10 +796,11 @@ fig_white_cells_ais <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true")`
-fig_white_cells_ais
+#fig_white_cells_ais
+ggplotly(fig_white_cells_ais)
 ```
 
-　S2+空白セルと同様、北陸沖、南西のEEZ境界線付近、九州・沖縄の西側の沖合に空白セルの重なりが分布している。
+　S2+空白セルと同様、北陸沖、南西のEEZ境界線付近、九州・沖縄の西側の沖合に空白セルの重なりが分布しており、AIS搭載漁船の操業が示されている。
 
 
 
@@ -800,9 +821,9 @@ fig_s2_ais <- ggplot() +
   geom_sf(data = japan_sf) + 
   xlim(120, 155) + ylim(20, 47) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
-  labs(fill = "S2 detections (Log)") +
+  labs(fill = "detections (Log)") +
   theme(legend.box = "vertical",
-        legend.position = "bottom",
+        legend.position = "none",
         axis.text = element_text(size=10),
         panel.background = element_rect(fill="lightblue"),
         panel.grid = element_blank(),
@@ -810,10 +831,11 @@ fig_s2_ais <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true")`
-fig_s2_ais
+#fig_s2_ais
+ggplotly(fig_s2_ais)
 ```
 
-　日本海沖を中心にまばらに空白セルが点在している。ここでの空白セルは、AIS搭載・未搭載の漁船どちらも操業されていないことを示しており、漁業が操業されていないと解釈する。
+　日本海沖を中心にまばらに空白セルが点在している。ここでの空白セルは、AIS搭載・未搭載の漁船どちらも操業されていないことを示しており、漁業が操業されていない可能性が高い。
 
 
 
@@ -836,9 +858,9 @@ fig_combined <- ggplot() +
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
   xlim(120, 155) + ylim(20, 47) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
-  labs(fill = "S2 detections (Log)") +
+  labs(fill = "detections (Log)") +
   theme(legend.box = "vertical",
-        legend.position = "bottom",
+        legend.position = "none",
         axis.text = element_text(size=10),
         panel.background = element_rect(fill="lightblue"),
         panel.grid = element_blank(),
@@ -846,20 +868,20 @@ fig_combined <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true")`
-fig_combined
+#fig_combined
+ggplotly(fig_combined)
 ```
 
-  日本海沖にいくつか空白セルの重なりが見られるが非常に少なく、ほぼ全ての海域で、AIS搭載漁船または未搭載漁船のいずれかが操業している。
+  全データを統合した結果、日本海沖にいくつか空白セルの重なりが見られるものの、その数は非常に少ないことが確認。すなわち、ほとんどの海域ではAIS搭載・未搭載のいずれかの漁船が操業しており、完全に未利用と考えられる海域はほとんどないことが示唆された。
 
 
 
 # result
 
-  ここではS1/S2・水産庁が特定した空白セル・AISのdetectionを用いて、日本のEEZ内の漁船の分布をプロットした。
-  S1による漁船の分布は日本沿岸部に集中し、比較的限定的な分布を示した。一方でS2では沖合を含む広範囲に分布が確認され、沿岸に近いほど多く分布する傾向を示した。特に日本海側の沖合では空白セル（AIS未搭載の漁船の操業がない）が多く分布していることがわかった。
-  水産庁が特定した空白セルを可視化した結果、S2と同様に日本海側の沖合に空白セル（大臣許可漁業の操業がない）が顕著に分布していた。その他にも、南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中していた。
-  AISデータに基づく分布でも、日本海側における空白セル（AIS搭載の漁船の操業がない）が顕著であり、S2・空白セルデータと同様の傾向を示した。特に南西EEZ境界付近や九州・沖縄西方の沖合域に空白が重なる点は一致している。
-  3つのデータを組み合わせた結果、日本海沖において、AIS搭載・未搭載の漁船どちらも操業がされていないセルが点在していることがわかった。一方でほぼ全ての海域で、AIS搭載漁船または未搭載漁船のいずれかの操業が確認されており、AIS搭載・未搭載の漁船どちらも操業がされていないセルは非常に少ないことがわかった。この結果から、日本海沖に点在する一部の海域では操業がほとんど行われていない可能性が示唆された。これらの海域は、漁業に支障をきたす可能性が比較的低いと考えられ、洋上風力発電の促進区域として検討する上で有力な情報となりうる。しかし、多くの海域ではAIS搭載漁船または未搭載漁船のいずれかによる漁業の操業が確認されており、促進区域として指定できる海域は非常に少ないことが示された。
+  ここではS1/S2・水産庁が特定した空白セル・AISの漁船データを用いて、日本のEEZ内の漁船の分布をプロットした。
+  S1では沿岸部に限られた分布が確認された一方、S2では沿岸から沖合にかけて広範囲に漁船の操業が捉えられた。特に日本海側の沖合では空白セルが散見されたが、その規模は限定的であった。水産庁が示した空白セルも同様の傾向を示し、日本海側沖合や南西EEZ境界付近、九州・沖縄西方などに集中していた。AISデータもこれと同様の分布を示し、日本海沖や南西境界域に部分的な空白セルが見られた。
+　そして3つのデータを統合した結果、操業が確認されない空白セルはごくわずかであり、大部分の海域ではAIS搭載・未搭載のいずれかの漁船が操業していることが明らかになった。すなわち、日本のEEZ内において、洋上風力発電の促進区域として指定できる海域はほとんどないことが示唆された。
+　以上より、日本国内での洋上風力発電の導入において、漁業活動に全く支障を与えない海域を見出すことは極めて困難である。
 
 
 
