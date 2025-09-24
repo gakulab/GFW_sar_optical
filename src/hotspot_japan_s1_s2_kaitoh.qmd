@@ -75,6 +75,7 @@ library(readr)
 library(openxlsx)
 library(sparklyr)
 library(plotly)
+library(gt)
 ```
 
 
@@ -333,9 +334,6 @@ saveRDS(s2_dat, file = here::here("data","raw","s2_dat.rds"))
 
 # white cells
 white_cells <- openxlsx::read.xlsx("~/Google Drive/Shared drives/gakuLab_data/Original/水産庁/EEZ水域利用/緯度経度データ（水域利用図の実績なし部分）.xlsx")
-
-# save
-saveRDS(white_cells, file = here::here("data","raw","white_cells.rds"))
 ```
 
 
@@ -376,11 +374,13 @@ temp_main <- sparklyr::sdf_bind_rows(daily_2018,
 #| warning: false
 
 # EEZ
-eez_sf1 <- st_read("~/Google Drive/Shared drives/gakuLab_data/Original/NEDO/EEZ_land_union_v3_202003/EEZ_Land_v3_202030.shp")  %>%  dplyr::filter(stringr::str_detect(UNION, "Japan"))  %>% 
-  st_transform(4326)
-eez_sf2 <- eez_sf1  %>% 
-  st_union()
-eez_sf <-   eez_sf2
+# eez_sf1 <- st_read("~/Google Drive/Shared drives/gakuLab_data/Original/NEDO/EEZ_land_union_v3_202003/EEZ_Land_v3_202030.shp")  %>%  dplyr::filter(stringr::str_detect(UNION, "Japan"))  %>% 
+#   st_transform(4326)
+# eez_sf2 <- eez_sf1  %>% 
+#   st_union()
+# eez_sf <-   eez_sf2
+
+eez_sf <- st_read("~/Google Drive/Shared drives/gakuLab_data/Original/spatial_map_data/eez/eez_japan_comp.shp")
 
 # Japan land
 japan_sf <- ne_countries(country = c('japan', 'russia', 'south korea', 'north korea', 'china','taiwan', 'mongolia'),scale="large", returnclass = "sf")  %>% 　st_transform(crs = 4326)
@@ -413,8 +413,8 @@ s2_dat_temp <- s2_dat_na %>% filter(pred_fishing == TRUE) #3137338: 75.5%
 s1_dat_na_1_12 <- s1_dat_temp %>% 
   mutate(lat_index = round(detect_lat * 12) / 12, 
          lon_index = round(detect_lon * 12) / 12) %>% 
-  mutate(lat_index = round(lat_index, 4),
-         lon_index = round(lon_index, 4)) %>%
+  mutate(lat_index = round(lat_index, 3),
+         lon_index = round(lon_index, 3)) %>%
   group_by(lat_index, lon_index) %>% 
   summarize(total_ditections = n()) %>% 
   ungroup() %>% 
@@ -424,8 +424,8 @@ s1_dat_na_1_12 <- s1_dat_temp %>%
 s2_dat_na_1_12 <- s2_dat_temp %>% 
   mutate(lat_index = round(detect_lat * 12) / 12, 
          lon_index = round(detect_lon * 12) / 12) %>% 
-  mutate(lat_index = round(lat_index, 4),
-         lon_index = round(lon_index, 4)) %>%
+  mutate(lat_index = round(lat_index, 3),
+         lon_index = round(lon_index, 3)) %>%
   group_by(lat_index, lon_index) %>% 
   summarize(total_ditections = n()) %>% 
   ungroup() %>% 
@@ -435,6 +435,26 @@ s2_dat_na_1_12 <- s2_dat_temp %>%
 # save
 saveRDS(s1_dat_na_1_12, file = here::here("data","analyzed","s1_dat_na_1_12.rds"))
 saveRDS(s2_dat_na_1_12, file = here::here("data","analyzed","s2_dat_na_1_12.rds"))
+```
+
+
+
+## 空白セルデータ
+
+  水産庁の空白セルのデータにおいて、緯度・経度を1/12度に丸めて集計する
+
+```{r}
+#| label: white_cells_processing
+#| echo: true
+#| eval: false
+
+# white cells
+white_cells <- white_cells %>% 
+  mutate(Lon = round(Lon, 3),
+         Lat = round(Lat, 3))
+
+# save
+saveRDS(white_cells, file = here::here("data","raw","white_cells.rds"))
 ```
 
 
@@ -476,8 +496,8 @@ temp_dat_cleaned <- temp_dat %>%
     detect_lat = as.numeric(str_sub(substring_index(avg_lat_lon, " ", -1), start = 1L, end = -2L)),
     lat_index = round(detect_lat * 12) / 12, 
     lon_index = round(detect_lon * 12) / 12) %>%
-  sparklyr::mutate(lat_index = round(lat_index, 4),
-         　　　　　lon_index = round(lon_index, 4)) %>%
+  sparklyr::mutate(lat_index = round(lat_index, 3),
+         　　　　　lon_index = round(lon_index, 3)) %>%
   
   left_join(vessel_list_gfw, by = c("ssvid", "year_st" = "year")) %>% 
   filter(best_vessel_class %in% fishing_vessel_set) %>% 
@@ -534,19 +554,19 @@ ais_dat <- readRDS(here::here("data","analyzed","ais_dat.rds"))
   GFWによるS1及びS2データのうち、1/12度単位で集計し地図上に可視化。AIS未搭載漁船の分布を捉える
 
 ```{r}
-#| label: S1S2_0.0833
+#| label: S1S2_1_12
 #| echo: true
 #| message: false
 #| warning: false
 
 ## S1(0.0833)
-fig_s1_0.0833 <- ggplot() +  
+fig_s1_1_12 <- ggplot() +  
   geom_tile(data = s1_dat_na_1_12, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
   #scale_fill_viridis_c(option=temp_virid_op ) +
   geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
   # Japan Land
   geom_sf(data = japan_sf) +
-  xlim(120, 155) + ylim(20, 47) +
+  coord_sf(xlim = c(120, 155), ylim = c(15, 50), expand = FALSE) +
   scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "S1 detections (Log)") +
   theme(legend.box = "vertical",
@@ -558,17 +578,17 @@ fig_s1_0.0833 <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
-#fig_s1_0.0833 #425*600
-ggplotly(fig_s1_0.0833)
+#fig_s1_1_12 #425*600
+ggplotly(fig_s1_1_12)
 
 ## S2(0.0833)
-fig_s2_0.0833 <- ggplot() + 
+fig_s2_1_12 <- ggplot() + 
   geom_tile(data = s2_dat_na_1_12, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
   #scale_fill_viridis_c(option=temp_virid_op ) +
   geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
   # Japan Land
   geom_sf(data = japan_sf) +
-  xlim(120, 155) + ylim(20, 47) +
+  coord_sf(xlim = c(120, 155), ylim = c(15, 50), expand = FALSE) +
   scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "S2 detections (Log)") +
   theme(legend.box = "vertical",
@@ -580,12 +600,12 @@ fig_s2_0.0833 <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
-#fig_s2_0.0833
-ggplotly(fig_s2_0.0833)
+#fig_s2_1_12
+ggplotly(fig_s2_1_12)
 ```
 
  S1とS2で分布のパターンが異なっている。S1は漁船の分布が比較的限定的で、日本沿岸部に集中した分布を示している。S2は沖合にも及ぶ広範囲での分布が示されている。 
- S2について、沿岸に近いほど漁船が多いことがわかる。一方で沖合では空白のセル、すなわちAIS未搭載の漁船が操業していないセルが散在している。日本のEEZ内だと、特に日本海側の沖合にて漁船の操業が確認されなかったセルが多く分布していることがわかる。
+ S2について、沿岸に近いほど漁船が多いことがわかる。一方で沖合では空白のセル、すなわちAIS未搭載の漁船が操業していないセルが散在している。日本のEEZ内だと、日本海、九州・沖縄の西側、北方領土の沖合にて漁船の操業が確認されなかったセルが多く分布していることがわかる。
  
 　
 
@@ -606,7 +626,7 @@ fig_white_cells <- ggplot() +
   geom_sf(data = japan_sf) +
   # white cells
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.8)+ 
-  coord_sf(xlim = c(120, 155), ylim = c(20, 47), expand = FALSE) +
+  coord_sf(xlim = c(120, 155), ylim = c(15, 50), expand = FALSE) +
   theme(legend.box = "vertical",
         legend.position = "bottom",
         axis.text = element_text(size=10),
@@ -632,13 +652,13 @@ ggplotly(fig_white_cells)
 #| message: false
 #| warning: false
 
-fig_ais_0.0833 <- ggplot() + 
+fig_ais_1_12 <- ggplot() + 
   geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
   #scale_fill_viridis_c(option=temp_virid_op ) +
   geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
   # Japan Land
   geom_sf(data = japan_sf) +
-  xlim(120, 155) + ylim(20, 47) +
+  coord_sf(xlim = c(120, 155), ylim = c(15, 50), expand = FALSE) +
   scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "AIS detections (Log)") +
   theme(legend.box = "vertical",
@@ -650,8 +670,8 @@ fig_ais_0.0833 <- ggplot() +
         legend.title = element_text(size=10))  #+
   #ggspatial::annotation_scale( location = "br") + 
   #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
-#fig_ais_0.0833
-ggplotly(fig_ais_0.0833)
+#fig_ais_1_12
+ggplotly(fig_ais_1_12)
 ```
 
   S2・空白セルデータに基づく分布と同様に、日本海側での空白セル、すなわちAIS搭載漁船が見られないセルが顕著である。また空白セルデータでも示されていたように、南西のEEZ境界線付近や九州・沖縄の西側の沖合に空白セルが分布している。
@@ -690,7 +710,7 @@ fig_white_cells_s2 <- ggplot() +
   geom_sf(data = japan_sf) +
   # white cells
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3)+ 
-  coord_sf(xlim = c(120, 155), ylim = c(20, 47), expand = FALSE) +
+  coord_sf(xlim = c(120, 155), ylim = c(15, 50), expand = FALSE) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "detections (Log)") +
   theme(legend.box = "vertical",
@@ -707,12 +727,16 @@ ggplotly(fig_white_cells_s2)
 white_cells_s2_common <- white_cells %>% 
   left_join(s2_dat_na_1_12, by = c("Lon" = "lon", "Lat" = "lat")) %>% 
   filter(is.na(total_ditections)) %>% 
-  select(Lon, Lat) #1524
-# save
-saveRDS(white_cells_s2_common, file = here::here("data","analyzed","white_cells_s2_common.rds"))
+  select(Lon, Lat) #548
+
+# 空白セルリスト
+white_cells_s2_common %>% 
+  gt() %>% 
+  tab_header(title = "S2+水産庁空白セル",
+             subtitle = "空白セルが重なった地点の緯度経度(n=548)") 
 ```
 
-  日本海側、特に北陸沖での空白セル同士の重なりが点在しており、AIS未搭載漁船の操業がないことを示している。また南西のEEZ境界線付近や九州・沖縄の西側、知床の沖合にも空白セルの重なりが点在している。
+  日本海側、特に北陸沖で548の空白セル同士の重なりが点在しており、AIS未搭載漁船の操業がないことを示している。また南西のEEZ境界線付近や九州・沖縄の西側、知床、北方領土の沖合にも空白セルの重なりが点在している。ただし、S2データは日本のEEZ内全てを網羅していないため、全ての空白セル同士の重なりが確認できない。
 
 
 
@@ -732,7 +756,7 @@ fig_white_cells_ais <- ggplot() +
   geom_sf(data = japan_sf) +
   # white cells
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
-  xlim(120, 155) + ylim(20, 47) +
+  coord_sf(xlim = c(120, 155), ylim = c(15, 50), expand = FALSE) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "detections (Log)") +
   theme(legend.box = "vertical",
@@ -751,12 +775,16 @@ ggplotly(fig_white_cells_ais)
 white_cells_ais_common <- white_cells %>% 
   left_join(ais_dat, by = c("Lon" = "lon", "Lat" = "lat")) %>% 
   filter(is.na(total_ditections)) %>% 
-  select(Lon, Lat) #1509
-# save
-saveRDS(white_cells_ais_common, file = here::here("data","analyzed","white_cells_ais_common.rds"))
+  select(Lon, Lat) #364
+
+# 空白セルリスト
+white_cells_ais_common %>% 
+  gt() %>% 
+  tab_header(title = "AIS+水産庁空白セル",
+             subtitle = "空白セルが重なった地点の緯度経度(n=364)")
 ```
 
-　S2+空白セルと同様、北陸沖、南西のEEZ境界線付近、九州・沖縄の西側、知床の沖合に空白セルの重なりが分布しており、AIS搭載漁船の操業が示されている。
+　S2+空白セルと同様、北陸沖、南西のEEZ境界線付近、九州・沖縄の西側、知床、北方領土の沖合に364の空白セルの重なりが分布しており、AIS搭載漁船の操業が示されている。
 
 
 
@@ -775,7 +803,7 @@ fig_s2_ais <- ggplot() +
   geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
   # Japan Land
   geom_sf(data = japan_sf) + 
-  xlim(120, 155) + ylim(20, 47) +
+  coord_sf(xlim = c(120, 155), ylim = c(15, 50), expand = FALSE) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "detections (Log)") +
   theme(legend.box = "vertical",
@@ -791,7 +819,7 @@ fig_s2_ais <- ggplot() +
 ggplotly(fig_s2_ais)
 ```
 
-　日本海沖を中心にまばらに空白セルが点在している。ここでの空白セルは、AIS搭載・未搭載の漁船どちらも操業されていないことを示しており、漁業が操業されていない可能性が高い。
+　日本海沖、九州・沖縄の西側、知床、北方領土の沖合に空白セルが点在している。ここでの空白セルは、AIS搭載・未搭載の漁船どちらも操業されていないことを示しており、漁業が操業されていない可能性が高い。
 
 
 
@@ -812,7 +840,7 @@ fig_combined <- ggplot() +
   geom_sf(data = japan_sf) +
   # white cells
   geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
-  xlim(120, 155) + ylim(20, 47) +
+  coord_sf(xlim = c(120, 155), ylim = c(15, 50), expand = FALSE) +
   #scale_fill_gradient(low = "blue", high = "yellow") +
   labs(fill = "detections (Log)") +
   theme(legend.box = "vertical",
@@ -834,22 +862,24 @@ white_cells_s2_ais_common <- white_cells %>%
   select(Lon, Lat) %>% 
   left_join(ais_dat, by = c("Lon" = "lon", "Lat" = "lat")) %>% 
   filter(is.na(total_ditections)) %>% 
-  select(Lon, Lat) #1478
-# save
-saveRDS(white_cells_s2_ais_common, file = here::here("data","analyzed","white_cells_s2_ais_common.rds"))
+  select(Lon, Lat) #126
+
+# 空白セルリスト
+white_cells_s2_ais_common %>% 
+  gt() %>% 
+  tab_header(title = "S2+AIS+水産庁空白セル",
+             subtitle = "空白セルが重なった地点の緯度経度(n=126)")
 ```
 
-  全データを統合した結果、日本海沖を中心に完全な空白セルの重なりの点在が確認。すなわち、ほとんどの海域ではAIS搭載・未搭載のいずれかの漁船が操業しており、完全に未利用と考えられる海域は極めて少ないことが示唆された。
+  全データを統合した結果、日本海沖・北方領土周辺を中心に126の空白セルの重なりが点在。ただし、S2がEEZ全体をカバーしてないことにより、AISと水産庁空白セルのみが重なった地点が混在している。これらの空白セルは、AIS搭載・未搭載の漁船いずれも操業していない、すなわち完全に未利用の海域である可能性がある。
 
 
 
 # 結果
 
   ここではS1/S2・水産庁が特定した空白セル・AISの漁船データを用いて、日本のEEZ内の漁船の分布をプロットした。
-  S1では沿岸部に限られた分布が確認された一方、S2では沿岸から沖合にかけて広範囲に漁船の操業が捉えられた。特に日本海側の沖合では空白セルが散見されたが、その規模は限定的であった。水産庁が示した空白セルも同様の傾向を示し、日本海側沖合や南西EEZ境界付近、九州・沖縄西方などに集中していた。AISデータもこれと同様の分布を示し、日本海沖や南西境界域に部分的な空白セルが見られた。
-　そして3つのデータを統合した結果、操業が確認されない空白セルはごくわずかであり、大部分の海域ではAIS搭載・未搭載のいずれかの漁船が操業していることが明らかになった。一方で、AISデータにおける緯度経度は厳密な位置を反映していない点、そしてS2データは日本のEEZ全体を網羅していない点に留意する必要がある。
-　すなわち、日本のEEZ内において、洋上風力発電の促進区域として指定できる海域は極めて少ないことが示唆され、日本国内での洋上風力発電の導入において、漁業活動に全く支障を与えない海域を見出すことは極めて困難である。
-
+  S1では沿岸部に限られた分布が確認された一方、S2では沿岸から沖合にかけて広範囲に漁船の操業が捉えられ、日本海、九州・沖縄の西側、北方領土の沖合に空白セルが集中していた。水産庁が示した空白セル・AISデータも同様の傾向を示し、日本海側沖合や南西EEZ境界付近、九州・沖縄西方、北方領土の沖合などに集中していた。そして3つのデータを統合した結果、操業が行われていないと考えられる空白セルは126であり、北方領土の沖合に集中し、日本海や九州・沖縄の西側で点在していた。一方で、AISデータにおける緯度経度は厳密な位置を反映していない点、そしてS2データは日本のEEZ全体を網羅していない点に留意する必要がある。
+  
 
 
 # 引用文献
