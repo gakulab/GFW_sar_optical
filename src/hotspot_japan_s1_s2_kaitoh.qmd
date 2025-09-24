@@ -1,0 +1,885 @@
+---
+title: "日本EEZ内の漁船操業状況の把握"
+author: "kaitoh kanazawa"
+format: 
+  html:
+    theme: cosmo
+    number-sections: true
+    toc: true
+    toc-depth: 4
+    toc-location: left  
+    code-fold: show
+    code-tools: false
+    self-contained: true
+editor: visual
+editor-options: 
+  markdown: 
+    wrap: 72
+---
+
+# 本レポートの概要
+
+ S1/S2・水産庁が特定した空白セル・AISの漁船データを用いて、日本のEEZ内の漁船分布を可視化
+ 
+# 背景・動機
+
+  気候変動の緩和、脱炭素化、エネルギー安全保障に対する関心の高まりにより、洋上風力発電が世界中で急速に拡大している[1–4]。世界の洋上風力発電設備の導入数は2017年以降倍増しており、今後その導入ペースは7倍にまで加速すると推定されている[5]。そして2021年には、世界の洋上風力発電の容量が57GWに達し、前年比60%を超える増加を示した[3,6]。そして2035年までに519GWに達すると予測されている[7]。中でもイギリスは、2022年にヨーロッパの洋上風力発電容量の45%、世界の24%を占めている[8]。またアメリカでは導入が遅れているものの、急速な拡大が見込まれており、2030年までに30GW、2050年までに110GWを目指している[3]。
+
+日本においても洋上風力発電の導入の拡大を図っており、2030年度温室効果ガス46%削減と2050年カーボンニュートラル達成という目標を掲げている[9,10]。そして2020年のグリーン成長戦略では、2030年までに洋上風力発電10GW、2040年までに30-45GW（浮体式を含む）の導入を目標に設定した[10]。洋上風力発電は土地面積による制約がなく、環境への影響が少ないとされており、また大規模な運営によってコスト削減が可能であることから[11]、日本は従来の主要エネルギー源の代わりとなる再生可能エネルギーとして導入に力を入れている。
+
+2018年には海洋再生可能エネルギー発電設備等に係る海域の利用の促進に関する法律（洋上再エネ促進法）が制定、翌年施行され、港湾区域外の公共海域を最大30年間占有する標準化された規制が確立された[11,12]。この制度において事業は、地域の漁業者との協議・合意達成を前提としつつも、その後の不確実性が考慮されていないことから、合意形成に課題を残している[11]。一方で、日本の浅海域は限られているため、将来的な導入拡大にはEEZでの開発が不可欠とされている[13]。EEZでの事業は、深海域での浮体式風力発電を前提とする技術的課題に加え、遠洋・沖合漁業や外国漁船を含む利害関係者との国際的な調整が必要であり、領海での事業とは法制度・ステークホルダー・技術条件のいずれにおいても性質が大きく異なる[14]。
+
+洋上風力発電の拡大は、漁業に対する影響が懸念されている。その中でも重大な懸念は、漁業との空間的競合であり、洋上風力発電の導入によってこれまで漁業者が利用していた漁場が失われる可能性がある[5,15]。そして追い出された漁業者は、他の海域へ漁場を移すことを余儀なくされ、他の漁業者との競合が激しくなり、その漁場の過剰利用へとつながる可能性がある[15]。こうした洋上風力発電の導入による影響は、漁業の生計を脅かす可能性もあり、その影響は加工業者といったサプライチェーンに波及し、沿岸地域の社会経済全体に影響をもたらす[5]。にもかかわらず、導入の漁業への影響評価は不十分であることが多く、また漁業関係者の協議への参画は限定的である[5,15]。日本においても、導入の過程、特に漁業者と事業間での合意形成において、漁業との空間競合が大きな課題となっており、漁業への影響について懸念の声が上がっている[10,11,14]。このことから、洋上風力発電の導入をめぐる調整にて、漁業への影響を検討する中で、実際にどの海域で漁業活動が行われているかを定量的に把握し、提示することが求められる。
+
+
+
+# 目標
+
+  S1/S2・水産庁が特定した空白セル・AISの漁船データを用いて、日本のEEZ内の漁船の分布を可視化・提示し、洋上風力発電の導入の検討に寄与する
+
+# 環境整理
+
+ 実行環境を整理し、数字表示やメモリ設定を行う
+
+```{r message=FALSE, warning=FALSE, attr.source='.numberLines', include=FALSE, results=FALSE}
+# 現在の環境にある変数の消去
+#rm(list = ls("all.names" = TRUE))
+
+#データの指数表示を避ける
+options(scipen = 100)
+
+# free memory
+#gc() 
+```
+
+# パッケージの読み込み
+
+　データ処理や可視化に必要なパッケージの読み込み
+
+```{r}
+#| label: packages
+#| echo: true
+#| message: false
+#| warning: false
+
+library(bigrquery)
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(skimr)
+library(stringr)
+library(forcats)
+library(readr)
+library(openxlsx)
+library(sparklyr)
+library(plotly)
+```
+
+
+
+# 関数の定義 
+
+　AISデータを読み込む関数を定義
+
+```{r}
+#| label: AIS_function
+#| echo: true
+#| message: false
+#| warning: false
+
+# Function to load GFW data using Spark
+load_gfw_data <- function(# default setting
+  base_path = "~/Google Drive/Shared drives/gakuLab_data",
+  years = 2018:2024,
+  include_2025 = TRUE,
+  memory_fraction = 0.90,
+  master = "local"
+) {
+  # Sparkセッションを明示的に変数に確保
+  spark_conn <- NULL
+  
+  # Setup Spark connection
+  tryCatch({
+    message("Initializing Spark connection...")
+    #conf <- list(spark.memory.fraction = memory_fraction)
+    # Spark接続用の設定
+    config <- spark_config()
+    config[["spark.serializer"]] <- "org.apache.spark.serializer.KryoSerializer"
+    # config[["spark.kryo.registrator"]] <- "org.apache.sedona.core.serde.SedonaKryoRegistrator"
+    # config[["spark.sql.extensions"]] <- "org.apache.sedona.sql.SedonaSqlExtensions"
+    # config$sparklyr.jars.packages <- "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.7.2-incubating"
+    config$spark.sql.catalogImplementation <- "in-memory"
+    
+    # ハイフン付き要素は[]でアクセス
+    config[["sparklyr.shell.driver-memory"]]   <- "16G"
+    config[["sparklyr.shell.executor-memory"]] <- "12G"
+    config[["spark.executor.memory"]]          <- "12G"
+    config[["spark.driver.memory"]]            <- "16G"
+    
+    # 接続を試みる
+    spark_conn <- sparklyr::spark_connect(master = "local", config = config)
+    
+    # 接続が成功したか確認
+    if (!sparklyr::spark_connection_is_open(spark_conn)) {
+      stop("Failed to establish Spark connection")
+    }
+    
+    message("Spark connection established successfully!")
+    
+    # Helper function to read parquet data
+    read_parquet_data <- function(year, type = "daily") {
+      file_path <- file.path(
+        base_path,
+        "Original/gfw/daily/fixed_upto2024",
+        paste0("dat_", type, "_", year, "_v3.parquet")
+      )
+      
+      message(sprintf("Reading %s data for year %s...", type, year))
+      
+      # ファイルが存在するか確認
+      if (!file.exists(file_path)) {
+        warning(sprintf("File does not exist: %s", file_path))
+        return(NULL)
+      }
+      
+      tryCatch({
+        df <- sparklyr::spark_read_parquet(
+          sc = spark_conn,  # ここをsc=に変更
+          name = paste0("dat_", type, "_", year),
+          path = file_path,
+          memory = FALSE,
+          overwrite = TRUE
+        )
+        assign(paste0("daily_", year), df, envir = .GlobalEnv)
+        return(df)
+      }, error = function(e) {
+        warning(sprintf("Error reading %s data for year %s: %s", type, year, e$message))
+        return(NULL)
+      })
+    }
+    
+    # Load yearly data
+    message("Loading yearly data...")
+    daily_data_list <- lapply(years, function(y) read_parquet_data(y, type = "daily"))
+    
+    # フィルタリングしてNULL値を除去
+    daily_data_list <- Filter(Negate(is.null), daily_data_list)
+    
+    # データが空かどうかチェック
+    if (length(daily_data_list) == 0) {
+      warning("No yearly data was loaded successfully")
+    }
+    
+    # Load 2025 data if requested
+    daily_2025 <- NULL
+    if (include_2025) {
+      message("Loading 2025 data...")
+      tryCatch({
+        path_2025 <- "~/Google Drive/Shared drives/gakuLab_data/Original/gfw/daily/need_update/dat_daily_2025_v3.parquet"
+        
+        if (file.exists(path_2025)) {
+          daily_2025 <- sparklyr::spark_read_parquet(
+            sc = spark_conn,  # ここをsc=に変更
+            name = "dat_daily_2025",
+            path = path_2025,
+            memory = FALSE,
+            overwrite = TRUE
+          )
+          assign("daily_2025", daily_2025, envir = .GlobalEnv)
+        } else {
+          warning("2025 data file does not exist")
+        }
+      }, error = function(e) {
+        warning(sprintf("Error loading 2025 data: %s", e$message))
+      })
+    }
+    
+    # その他のデータ読み込み処理...
+    message("Loading gfw vessel list...")
+    vessel_list_path <- file.path(base_path, "Original/gfw/vessel_list/gfw_vessel_list_v3.parquet")
+    
+    if (file.exists(vessel_list_path)) {
+      vessel_list_gfw <- sparklyr::spark_read_parquet(
+        sc = spark_conn,  # ここをsc=に変更
+        name = "list_vessel_gfw",
+        path = vessel_list_path,
+        memory = FALSE,
+        overwrite = TRUE
+      )
+      assign("vessel_list_gfw", vessel_list_gfw, envir = .GlobalEnv)
+    } else {
+      warning("Vessel list file does not exist")
+    }
+    
+    # 国コードの読み込み
+    message("Loading gfw country codes...")
+    country_codes_path <- file.path(base_path, "Project/gakuLab_vessel_list/list_country/GFWcountry_codes19Aug23_gakulab.csv")
+    
+    if (file.exists(country_codes_path)) {
+      country_codes_gfw <- sparklyr::spark_read_csv(
+        sc = spark_conn,  # ここをsc=に変更
+        name = "list_country_gfw",
+        path = country_codes_path,
+        memory = FALSE,
+        delimiter = ",",
+        header = TRUE
+      )
+      assign("country_list_gfw", country_codes_gfw, envir = .GlobalEnv)
+    } else {
+      warning("Country codes file does not exist")
+    }
+    
+    # データの結合
+    # 少なくとも一つのデータフレームがあるか確認
+    has_data_to_combine <- (length(daily_data_list) > 0) || (!is.null(daily_2025))
+    
+    if (has_data_to_combine) {
+      message("Combining daily data...")
+      daily_data_to_combine <- c(
+        if (!is.null(daily_2025)) list(daily_2025),
+        daily_data_list
+      )
+      
+      # 結合するべきデータがあるか確認
+      if (length(daily_data_to_combine) > 0) {
+        combined_daily <- do.call(sparklyr::sdf_bind_rows, daily_data_to_combine)
+        assign("combined_daily", combined_daily, envir = .GlobalEnv)
+      } else {
+        warning("No data to combine")
+      }
+    } else {
+      warning("No data available to combine")
+    }
+    
+    # 完了メッセージ
+    message("Data loading completed successfully")
+    assign("spark_conn", spark_conn, envir = .GlobalEnv)
+    
+  }, error = function(e) {
+    # エラーが発生した場合、Spark接続をクリーンアップ
+    if (!is.null(spark_conn) && sparklyr::spark_connection_is_open(spark_conn)) {
+      message("Disconnecting Spark due to error...")
+      sparklyr::spark_disconnect(spark_conn)
+    }
+    stop(sprintf("Error in data loading: %s", e$message))
+  })
+}
+```
+
+
+# データの読み込み
+
+  本分析では、以下の3つのデータを用いる
+  
+  1. **S1/S2データ**  
+    GFWによるS1及びS2の漁船データ
+    本分析では、AISを搭載していない漁船に絞る（AISデータとの重複を避けるため）  
+    合成開口レーダー（SAR）及び光学レーダーにより、その場にいる船舶をリアルタイムで記録・データ化している  
+    ここでの空白セルは、**AISを搭載していない漁船の操業がない**ことを示している  
+    
+  2. **空白セルデータ**  
+    水産庁より、操業実績のない空白セルのデータ（出典：https://www.jfa.maff.go.jp/j/kikaku/eezriyou.html）  
+    ここでの空白セルは、**一部の大臣許可漁業の操業がない**ことを示している  
+  
+  3. **AISデータ**  
+    GFWによるAISデータ  
+    本データにおける緯度経度は、その船舶が1日に航行した範囲の中心点を示しているため、厳密には正確ではない  
+    ここでの空白セルは、**AISを搭載している漁船の操業がない**ことを示している  
+  
+  
+
+## S1/S2データ
+
+　GFWによるS1及びS2の漁船データをBigQueryから取得し、Rに読み込む
+
+```{r}
+#| label: S1S2
+#| echo: true
+#| eval: false
+
+projectid = "fish-database-275116"
+
+# S1
+sql <- "SELECT * FROM `fish-database-275116.GFW_Data.S1_published_detections_Zihan`;"
+tb <- bq_project_query(projectid, sql)
+s1_dat <- bq_table_download(tb)
+
+# S2
+sql <- "SELECT * FROM `fish-database-275116.GFW_Data.S2_detections_Zihan`;"
+tb <- bq_project_query(projectid, sql)
+s2_dat <- bq_table_download(tb)
+
+# check
+skim(s1_dat)
+skim(s2_dat)
+
+# save
+saveRDS(s1_dat, file = here::here("data","raw","s1_dat.rds"))
+saveRDS(s2_dat, file = here::here("data","raw","s2_dat.rds"))
+```
+
+
+
+## 空白セルデータ
+
+  水産庁より大臣許可漁業の操業実績のない空白セルのデータを読み込む
+
+```{r}
+#| label: white_cells
+#| echo: true
+#| eval: false
+
+# white cells
+white_cells <- openxlsx::read.xlsx("~/Google Drive/Shared drives/gakuLab_data/Original/水産庁/EEZ水域利用/緯度経度データ（水域利用図の実績なし部分）.xlsx")
+
+# save
+saveRDS(white_cells, file = here::here("data","raw","white_cells.rds"))
+```
+
+
+
+## AISデータ
+
+  GFWによるAISデータをSparkで読み込む
+
+```{r}
+#| label: AIS
+#| echo: true
+#| eval: false
+
+# GFW daily data 
+load_gfw_data(years = 2018:2024, include_2025 = TRUE)
+# 
+temp_main <- sparklyr::sdf_bind_rows(daily_2018,
+                           daily_2019,
+                           daily_2020,
+                           daily_2021,
+                           daily_2022,
+                           daily_2023,
+                           daily_2024,
+                           daily_2025 #
+                           )
+```
+
+
+
+## 地理データ
+
+　プロットの際に用いる地理データ（EEZ、日本地図）を読み込む
+
+```{r}
+#| label: geo_data
+#| echo: true
+#| message: false
+#| warning: false
+
+# EEZ
+eez_sf1 <- st_read("~/Google Drive/Shared drives/gakuLab_data/Original/NEDO/EEZ_land_union_v3_202003/EEZ_Land_v3_202030.shp")  %>%  dplyr::filter(stringr::str_detect(UNION, "Japan"))  %>% 
+  st_transform(4326)
+eez_sf2 <- eez_sf1  %>% 
+  st_union()
+eez_sf <-   eez_sf2
+
+# Japan land
+japan_sf <- ne_countries(country = c('japan', 'russia', 'south korea', 'north korea', 'china','taiwan', 'mongolia'),scale="large", returnclass = "sf")  %>% 　st_transform(crs = 4326)
+```
+
+# データ加工
+
+  読み込んだデータを分析用に加工する
+
+## S1/S2データ
+
+　AIS未搭載の漁船を抽出したいため、ssvidが欠損しているデータに絞り、それらの緯度・経度を1/12(0.0833)度に丸めて集計する
+
+```{r}
+#| label: S1S2_processing
+#| echo: true
+#| eval: false
+
+# only missing value in ssvid
+s1_dat_na <- s1_dat[is.na(s1_dat$ssvid),] #80687: 17.8%
+s2_dat_na <- s2_dat[is.na(s2_dat$ssvid),] #4153231: 48.5%
+
+# pred_fishing == TRUE
+
+s1_dat_temp <- s1_dat_na %>% filter(pred_fishing == TRUE) #75844: 94.0%
+s2_dat_temp <- s2_dat_na %>% filter(pred_fishing == TRUE) #3137338: 75.5%
+
+# data flame lat lon {#sec-data-flame-latlon}
+# 0.0833
+s1_dat_na_1_12 <- s1_dat_temp %>% 
+  mutate(lat_index = round(detect_lat * 12) / 12, 
+         lon_index = round(detect_lon * 12) / 12) %>% 
+  mutate(lat_index = round(lat_index, 4),
+         lon_index = round(lon_index, 4)) %>%
+  group_by(lat_index, lon_index) %>% 
+  summarize(total_ditections = n()) %>% 
+  ungroup() %>% 
+  mutate(lat = lat_index, lon = lon_index) %>% 
+  select(lat, lon, total_ditections)
+
+s2_dat_na_1_12 <- s2_dat_temp %>% 
+  mutate(lat_index = round(detect_lat * 12) / 12, 
+         lon_index = round(detect_lon * 12) / 12) %>% 
+  mutate(lat_index = round(lat_index, 4),
+         lon_index = round(lon_index, 4)) %>%
+  group_by(lat_index, lon_index) %>% 
+  summarize(total_ditections = n()) %>% 
+  ungroup() %>% 
+  mutate(lat = lat_index, lon = lon_index) %>% 
+  select(lat, lon, total_ditections)
+
+# save
+saveRDS(s1_dat_na_1_12, file = here::here("data","analyzed","s1_dat_na_1_12.rds"))
+saveRDS(s2_dat_na_1_12, file = here::here("data","analyzed","s2_dat_na_1_12.rds"))
+```
+
+
+
+## AISデータ
+
+  　GFWによるAISデータを漁船に絞り、緯度・経度を1/12度に丸めて集計する
+
+```{r}
+#| label: AIS_processing
+#| echo: true
+#| eval: false
+
+# fishing vessel class
+fishing_vessel_set <- c("drifting_longlines", "fish_factory","fishing","fixed_gear",           
+"other_purse_seines", "pole_and_line","pots_and_traps",    
+"purse_seines",     "set_longlines","squid_jigger",    "trawlers",     "tuna_purse_seines")
+
+temp_dat <- temp_main
+
+# data flame lat lon
+temp_dat_cleaned <- temp_dat %>% 
+  
+  select(ssvid, first_timestamp, last_timestamp, avg_lat_lon) %>%
+  
+  sparklyr::mutate(year_st  = substring_index(first_timestamp, "-",1),
+          month_st  = substring_index(substring_index(first_timestamp, "-",2), "-", -1), 
+          day_st  = str_sub(substring_index(first_timestamp, " ", 1), -2))  %>%  
+  
+  # mutate date  for JP time     
+    sparklyr::mutate(first_timestamp_jp = from_utc_timestamp(first_timestamp, "Asia/Tokyo"),
+          last_timestamp_jp = from_utc_timestamp(last_timestamp, "Asia/Tokyo"),
+          month_jp = month(first_timestamp_jp), 
+          year_jp = year(first_timestamp_jp),
+          day_jp = day(first_timestamp_jp),
+          year = as.numeric(year_jp)) %>%  
+  
+  sparklyr::mutate(detect_lon = as.numeric(str_sub(substring_index(avg_lat_lon, " ", 1), start = 7L, end = -1L)), 
+    detect_lat = as.numeric(str_sub(substring_index(avg_lat_lon, " ", -1), start = 1L, end = -2L)),
+    lat_index = round(detect_lat * 12) / 12, 
+    lon_index = round(detect_lon * 12) / 12) %>%
+  sparklyr::mutate(lat_index = round(lat_index, 4),
+         　　　　　lon_index = round(lon_index, 4)) %>%
+  
+  left_join(vessel_list_gfw, by = c("ssvid", "year_st" = "year")) %>% 
+  filter(best_vessel_class %in% fishing_vessel_set) %>% 
+  
+  group_by(lat_index, lon_index) %>%
+  summarise(total_ditections = n()) %>%
+  sparklyr::mutate(lat = lat_index, lon = lon_index) %>%
+  ungroup() %>%
+  select(lat, lon, total_ditections)  
+
+# register table
+sdf_register(temp_dat_cleaned, "ais_detections")
+tbl_cache(spark_conn, "ais_detections")
+
+# collect
+ais_dat <- temp_dat_cleaned %>% collect()
+
+# save
+saveRDS(ais_dat, file = here::here("data","analyzed","ais_dat.rds"))
+```
+
+
+
+# 分析用データの読み込み
+
+　これまでに作成した分析用データセットを読み込む
+
+```{r}
+#| label: data_for_plot
+#| message: false
+#| warning: false
+
+
+# S1/S2
+s1_dat_na_1_12 <- readRDS(here::here("data","analyzed","s1_dat_na_1_12.rds"))
+s2_dat_na_1_12 <- readRDS(here::here("data","analyzed","s2_dat_na_1_12.rds"))
+
+# white cells
+white_cells <- readRDS(here::here("data","raw","white_cells.rds"))
+
+# AIS
+ais_dat <- readRDS(here::here("data","analyzed","ais_dat.rds"))
+```
+
+
+
+
+# プロット
+
+　作成した分析用データセットを日本地図上に重ね合わせることで、漁船の分布を可視化。これにより、どの海域で漁船が活動しているか、また漁船の操業が確認されない「空白セル」がどこに存在するかを把握する。
+
+## S1/S2(1/12度集計)
+
+  GFWによるS1及びS2データのうち、1/12度単位で集計し地図上に可視化。AIS未搭載漁船の分布を捉える
+
+```{r}
+#| label: S1S2_0.0833
+#| echo: true
+#| message: false
+#| warning: false
+
+## S1(0.0833)
+fig_s1_0.0833 <- ggplot() +  
+  geom_tile(data = s1_dat_na_1_12, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  xlim(120, 155) + ylim(20, 47) +
+  scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S1 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
+#fig_s1_0.0833 #425*600
+ggplotly(fig_s1_0.0833)
+
+## S2(0.0833)
+fig_s2_0.0833 <- ggplot() + 
+  geom_tile(data = s2_dat_na_1_12, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  xlim(120, 155) + ylim(20, 47) +
+  scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "S2 detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
+#fig_s2_0.0833
+ggplotly(fig_s2_0.0833)
+```
+
+ S1とS2で分布のパターンが異なっている。S1は漁船の分布が比較的限定的で、日本沿岸部に集中した分布を示している。S2は沖合にも及ぶ広範囲での分布が示されている。 
+ S2について、沿岸に近いほど漁船が多いことがわかる。一方で沖合では空白のセル、すなわちAIS未搭載の漁船が操業していないセルが散在している。日本のEEZ内だと、特に日本海側の沖合にて漁船の操業が確認されなかったセルが多く分布していることがわかる。
+ 
+　
+
+## 空白セル
+
+  ここでは、一部の大臣許可漁業の操業が確認されなかったセル（空白セル）を可視化。EEZ内で一部の大臣許可漁業が行われていない海域を把握。
+
+```{r}
+#| label: white_cells_plot
+#| echo: true
+#| message: false
+#| warning: false
+
+fig_white_cells <- ggplot() +  
+  # eez
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  # white cells
+  geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.8)+ 
+  coord_sf(xlim = c(120, 155), ylim = c(20, 47), expand = FALSE) +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=13),
+        legend.title = element_text(size=15))  #+
+#fig_white_cells #650*600
+ggplotly(fig_white_cells)
+```
+
+ S2データに基づく空白セルの分布と同様に、日本のEEZ内で特に日本海側の沖合に空白セル、すなわち大臣許可漁業が操業していないセルが多く分布していることがわかる。また南西のEEZ境界線付近や九州・沖縄の西側沖合、北・南大東島の南側沖合、小笠原諸島北部沖合、瀬戸内海にも空白セルが集中している。
+
+
+
+## AIS
+
+  GFWによるAISデータを1/12度単位で集計し地図上に可視化。AIS搭載漁船の分布の全体像を捉える。
+
+```{r}
+#| label: AIS_plot
+#| echo: true
+#| message: false
+#| warning: false
+
+fig_ais_0.0833 <- ggplot() + 
+  geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)))+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  xlim(120, 155) + ylim(20, 47) +
+  scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "AIS detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "bottom",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true") 
+#fig_ais_0.0833
+ggplotly(fig_ais_0.0833)
+```
+
+  S2・空白セルデータに基づく分布と同様に、日本海側での空白セル、すなわちAIS搭載漁船が見られないセルが顕著である。また空白セルデータでも示されていたように、南西のEEZ境界線付近や九州・沖縄の西側の沖合に空白セルが分布している。
+
+
+
+## 空白セルの特定
+
+  各データを組み合わせて以下の4パターンを作成・プロットし、漁船の操業が確認できるまたは確認できないエリアを区分する
+  
+  1. **S2+空白セル**：AIS未搭載漁船と空白セルの重なり
+  2. **AIS+空白セル**：搭載漁船と空白セルの重なり
+  3. **AIS+S2**：両データで検知された操業分布
+  4. **S2+空白セル+AIS**：3データを統合
+  
+  なお、S1はS2と比較して分布が少なく、また分布も限定的であるため、S1を含む複合図は作成しない
+  加えて、複数のデータによるdetectionを重ねたときどこが空白になるかを強調したいため、detection部分は黒でプロットする
+  
+  結果の解釈について、漁船はAIS搭載・未搭載で区分できることから、S2及びAISによる分布を重ねた上で空白の部分は、漁業活動が行われていない可能性の高いエリアであると解釈する。
+  
+  
+
+### S2+空白セル
+
+```{r}
+#| label: S2_white_cells
+#| echo: true
+#| message: false
+#| warning: false
+
+fig_white_cells_s2 <- ggplot() +  
+  geom_tile(data = s2_dat_na_1_12, aes(x=lon, y=lat, fill=log(total_ditections)), colour = "black")+ 
+  # eez
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  # white cells
+  geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3)+ 
+  coord_sf(xlim = c(120, 155), ylim = c(20, 47), expand = FALSE) +
+  #scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "none",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+#fig_white_cells_s2 #600*600
+ggplotly(fig_white_cells_s2)
+
+# 重なる空白セルを抽出
+white_cells_s2_common <- white_cells %>% 
+  left_join(s2_dat_na_1_12, by = c("Lon" = "lon", "Lat" = "lat")) %>% 
+  filter(is.na(total_ditections)) %>% 
+  select(Lon, Lat) #1524
+# save
+saveRDS(white_cells_s2_common, file = here::here("data","analyzed","white_cells_s2_common.rds"))
+```
+
+  日本海側、特に北陸沖での空白セル同士の重なりが点在しており、AIS未搭載漁船の操業がないことを示している。また南西のEEZ境界線付近や九州・沖縄の西側、知床の沖合にも空白セルの重なりが点在している。
+
+
+
+### 空白セル+AIS
+
+```{r}
+#| label: white_cells_AIS
+#| echo: true
+#| message: false
+#| warning: false
+
+fig_white_cells_ais <- ggplot() + 
+  geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  # white cells
+  geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
+  xlim(120, 155) + ylim(20, 47) +
+  #scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "none",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true")`
+#fig_white_cells_ais
+ggplotly(fig_white_cells_ais)
+
+# 重なる空白セルを抽出
+white_cells_ais_common <- white_cells %>% 
+  left_join(ais_dat, by = c("Lon" = "lon", "Lat" = "lat")) %>% 
+  filter(is.na(total_ditections)) %>% 
+  select(Lon, Lat) #1509
+# save
+saveRDS(white_cells_ais_common, file = here::here("data","analyzed","white_cells_ais_common.rds"))
+```
+
+　S2+空白セルと同様、北陸沖、南西のEEZ境界線付近、九州・沖縄の西側、知床の沖合に空白セルの重なりが分布しており、AIS搭載漁船の操業が示されている。
+
+
+
+### AIS+S2
+
+```{r}
+#| label: AIS_S2
+#| echo: true
+#| message: false
+#| warning: false
+
+fig_s2_ais <- ggplot() + 
+  geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  geom_tile(data = s2_dat_na_1_12, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) + 
+  xlim(120, 155) + ylim(20, 47) +
+  #scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "none",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true")`
+#fig_s2_ais
+ggplotly(fig_s2_ais)
+```
+
+　日本海沖を中心にまばらに空白セルが点在している。ここでの空白セルは、AIS搭載・未搭載の漁船どちらも操業されていないことを示しており、漁業が操業されていない可能性が高い。
+
+
+
+### S2+空白セル+AIS
+
+```{r}
+#| label: all_data
+#| echo: true
+#| message: false
+#| warning: false
+
+fig_combined <- ggplot() + 
+  geom_tile(data = ais_dat, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  geom_tile(data = s2_dat_na_1_12, aes(x=lon, y=lat, fill=log(total_ditections)), alpha = 0.6, colour = "black")+ #, alpha = temp_alpha
+  #scale_fill_viridis_c(option=temp_virid_op ) +
+  geom_sf(data = eez_sf, alpha = .1, col = "#D0104C") +
+  # Japan Land
+  geom_sf(data = japan_sf) +
+  # white cells
+  geom_tile(data = white_cells, aes(x=Lon, y=Lat), fill = "white", alpha = 0.3) + 
+  xlim(120, 155) + ylim(20, 47) +
+  #scale_fill_gradient(low = "blue", high = "yellow") +
+  labs(fill = "detections (Log)") +
+  theme(legend.box = "vertical",
+        legend.position = "none",
+        axis.text = element_text(size=10),
+        panel.background = element_rect(fill="lightblue"),
+        panel.grid = element_blank(),
+        legend.text = element_text(angle=45,hjust=1,size=10),
+        legend.title = element_text(size=10))  #+
+  #ggspatial::annotation_scale( location = "br") + 
+  #ggspatial::annotation_north_arrow(location = "tr", which_north = "true")`
+#fig_combined
+ggplotly(fig_combined)
+
+# 重なる空白セルを抽出
+white_cells_s2_ais_common <- white_cells %>% 
+  left_join(s2_dat_na_1_12, by = c("Lon" = "lon", "Lat" = "lat")) %>% 
+  filter(is.na(total_ditections)) %>% 
+  select(Lon, Lat) %>% 
+  left_join(ais_dat, by = c("Lon" = "lon", "Lat" = "lat")) %>% 
+  filter(is.na(total_ditections)) %>% 
+  select(Lon, Lat) #1478
+# save
+saveRDS(white_cells_s2_ais_common, file = here::here("data","analyzed","white_cells_s2_ais_common.rds"))
+```
+
+  全データを統合した結果、日本海沖を中心に完全な空白セルの重なりの点在が確認。すなわち、ほとんどの海域ではAIS搭載・未搭載のいずれかの漁船が操業しており、完全に未利用と考えられる海域は極めて少ないことが示唆された。
+
+
+
+# 結果
+
+  ここではS1/S2・水産庁が特定した空白セル・AISの漁船データを用いて、日本のEEZ内の漁船の分布をプロットした。
+  S1では沿岸部に限られた分布が確認された一方、S2では沿岸から沖合にかけて広範囲に漁船の操業が捉えられた。特に日本海側の沖合では空白セルが散見されたが、その規模は限定的であった。水産庁が示した空白セルも同様の傾向を示し、日本海側沖合や南西EEZ境界付近、九州・沖縄西方などに集中していた。AISデータもこれと同様の分布を示し、日本海沖や南西境界域に部分的な空白セルが見られた。
+　そして3つのデータを統合した結果、操業が確認されない空白セルはごくわずかであり、大部分の海域ではAIS搭載・未搭載のいずれかの漁船が操業していることが明らかになった。一方で、AISデータにおける緯度経度は厳密な位置を反映していない点、そしてS2データは日本のEEZ全体を網羅していない点に留意する必要がある。
+　すなわち、日本のEEZ内において、洋上風力発電の促進区域として指定できる海域は極めて少ないことが示唆され、日本国内での洋上風力発電の導入において、漁業活動に全く支障を与えない海域を見出すことは極めて困難である。
+
+
+
+# 引用文献
+[1]	M. Püts, A. Kempf, C. Möllmann, M. Taylor, Trade-offs between fisheries, offshore wind farms and marine protected areas in the southern North Sea – Winners, losers and effective spatial management, Mar. Policy 152 (2023) 105574.
+
+[2]	A. Lipsky, A. Silva, F. Gilmour, Y. Arjona, F. Hogan, J. Lloret, D. Bolser, S. Haase, D. Oesterwind, T. ten Brink, M. Roach, K. Ford, Fisheries independent surveys in a new era of offshore wind energy development, ICES J. Mar. Sci. 82 (2025) fsae060.
+
+[3]	E.T. Methratta, A. Silva, A. Lipsky, K. Ford, D. Christel, L. Pfeiffer, Science priorities for offshore wind and fisheries research in the Northeast U.s. continental Shelf ecosystem: Perspectives from scientists at the national marine fisheries service, Mar. Coast. Fish. 15 (2023) e10242.
+
+[4]	K.A. Alexander, T.A. Wilding, J. Jacomina Heymans, Attitudes of Scottish fishers towards marine renewable energy, Mar. Policy 37 (2013) 239–244.
+
+[5]	C.L. Szostek, S.C.L. Watson, N. Trifonova, N.J. Beaumont, B.E. Scott, Spatial conflict in offshore wind farms: Challenges and solutions for the commercial fishing industry, Energy Policy 200 (2025) 114555.
+
+[6]	GWEC, Global wind energy report 2022, (2022). https://www.lerenovaveis.org/contents/lerpublication/gwec_2022_mar_global-wind-report-2022.pdf.
+
+[7]	WFO, Global Offshore Wind Report: 2022, (2023). https://wfo-global.org/wp-content/uploads/2023/03/WFO_Global-Offshore-Wind-Report-2022.pdf.
+
+[8]	CrownEstate, Offshore Wind Report 2022, (2022). https://www.thecrownestate.co.uk/media/4378/final-published_11720_owoperationalreport_2022_tp_250423.pdf.
+
+[9]	Policy Speech by the Prime Minister to the 203rd Session of the Diet (Speeches and Statements by the Prime Minister), https://japan.kantei.go.jp/99_suga/statement/202010/_00006.html (accessed September 7, 2025).
+
+[10]	K. Iwata, S. Kyoi, Y. Ushifusa, Public attitudes of offshore wind energy in Japan: An empirical study using choice experiments, Cleaner Energy Systems 4 (2023) 100052.
+
+[11]	S. Tajima, K. Yamaguchi, H. Shiroyama, Consensus building with fishermen on offshore wind farms in Japan: Current status and policy recommendations, Mar. Policy 160 (2024) 105975.
+
+[12]	Act on Promoting the Utilization of Sea Areas for the Development of Marine Renewable Energy Power Generation Facilities - English - Japanese Law Translation, (n.d.). https://www.japaneselawtranslation.go.jp/en/laws/view/3580/en (accessed September 7, 2025).
+
+[13]	Ryota Wada, Amir R. Nejad, Kazuhiro Iijima, Junji Shimazaki, Mihaela Ibrion, Shinnosuke Wanaka, Hideo Nomura, Yoshitaka Mizushima, Takuya Nakashima, Ken Takagi, Floating Offshore Wind in Japan: Addressing the Challenges, Efforts, and Research gaps, Wind Energ. Sci. Discuss (2025) 1–58.
+
+[14]	IEEJ, Challenges and solutions to deploying floating offshore wind power in Japan, (2024). https://eneken.ieej.or.jp/data/11717.pdf.
+
+[15]	G. Van Hoey, F. Bastardie, S. Birchenough, A. De Backer, A. Gill, S. De Koning, S. Hodgson, S. Mangi Chai, J. Steenbergen, E. Termeer, S. Van den Burg, N. Hintzen, Overview of the effects of offshore wind farms on fisheries and aquaculture: EASME/EMFF/2018/011 lot 1 : Specific contract no. 03 : Final report, 2021.
+
